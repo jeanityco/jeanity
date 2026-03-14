@@ -1,6 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 const MONTHS = [
   "January",
@@ -22,6 +24,7 @@ function getDaysInMonth(month: number, year: number) {
 }
 
 export default function Home() {
+  const router = useRouter();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showSignInModal, setShowSignInModal] = useState(false);
   const [dobMonth, setDobMonth] = useState<string>("");
@@ -31,10 +34,8 @@ export default function Home() {
   const [email, setEmail] = useState<string>("");
   const [formError, setFormError] = useState<string | null>(null);
   const [createStep, setCreateStep] = useState<
-    "details" | "verify" | "password" | "avatar" | "username"
+    "details" | "verification" | "password" | "avatar" | "username"
   >("details");
-  const [verificationCode, setVerificationCode] = useState<string>("");
-  const [verificationError, setVerificationError] = useState<string | null>(null);
   const [createPassword, setCreatePassword] = useState<string>("");
   const [createPasswordError, setCreatePasswordError] = useState<string | null>(
     null
@@ -44,6 +45,50 @@ export default function Home() {
   const [signInEmail, setSignInEmail] = useState<string>("");
   const [signInPassword, setSignInPassword] = useState<string>("");
   const [signInError, setSignInError] = useState<string | null>(null);
+  const [isSigningIn, setIsSigningIn] = useState(false);
+  const [isCompletingSignup, setIsCompletingSignup] = useState(false);
+  const [verificationCode, setVerificationCode] = useState<string>("");
+  const [verificationError, setVerificationError] = useState<string | null>(
+    null
+  );
+  const [isSendingVerification, setIsSendingVerification] = useState(false);
+  const [verificationSent, setVerificationSent] = useState(false);
+
+  async function sendVerificationEmail() {
+    if (!email.trim()) return;
+    setIsSendingVerification(true);
+    setVerificationError(null);
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const { error } = await supabase.auth.signInWithOtp({
+        email: email.trim(),
+        options: {
+          shouldCreateUser: true,
+        },
+      });
+      if (error) {
+        setVerificationError(error.message);
+        setVerificationSent(false);
+        return;
+      }
+      setVerificationSent(true);
+    } finally {
+      setIsSendingVerification(false);
+    }
+  }
+
+  useEffect(() => {
+    if (
+      showCreateModal &&
+      createStep === "verification" &&
+      email.trim() &&
+      !verificationSent &&
+      !isSendingVerification
+    ) {
+      void sendVerificationEmail();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only auto-send when opening verification step
+  }, [showCreateModal, createStep]);
 
   const yearOptions = useMemo(() => {
     const current = new Date().getFullYear();
@@ -142,6 +187,7 @@ export default function Home() {
                     setFormError(null);
                     setVerificationCode("");
                     setVerificationError(null);
+                    setVerificationSent(false);
                     setShowCreateModal(true);
                   }}
                   className="group inline-flex items-center justify-center rounded-full bg-gradient-to-r from-emerald-400 via-sky-400 to-indigo-400 px-8 py-3 text-sm font-semibold text-slate-950 shadow-[0_20px_45px_rgba(8,47,73,0.75)] transition-transform hover:translate-y-0.5 hover:shadow-[0_26px_70px_rgba(8,47,73,0.9)]"
@@ -221,7 +267,10 @@ export default function Home() {
                       }
 
                       setFormError(null);
-                      setCreateStep("verify");
+                      setVerificationCode("");
+                      setVerificationError(null);
+                      setVerificationSent(false);
+                      setCreateStep("verification");
                     }}
                   >
                     <div className="space-y-2">
@@ -317,53 +366,63 @@ export default function Home() {
                     </button>
                   </form>
                 </>
-              ) : createStep === "verify" ? (
+              ) : createStep === "verification" ? (
                 <>
                   <div className="space-y-1">
                     <h2 className="text-xl sm:text-2xl font-semibold text-slate-50">
-                      We sent you a code
+                      Verify your email
                     </h2>
                     <p className="text-sm text-slate-400">
-                      Enter it below to verify{" "}
-                      <span className="font-medium text-slate-100">
-                        {email || "your email"}
-                      </span>
-                      .
+                      We sent a one-time code to{" "}
+                      <span className="font-medium text-slate-200">{email}</span>.
+                      Enter it below before you choose a password.
                     </p>
                   </div>
 
                   <form
                     className="space-y-5"
-                    onSubmit={(e) => {
+                    onSubmit={async (e) => {
                       e.preventDefault();
-                      if (!verificationCode.trim()) {
+                      const code = verificationCode.replace(/\s/g, "");
+                      if (code.length < 6) {
                         setVerificationError(
-                          "Please enter the code we sent to your email."
+                          "Enter the 6-digit code from your email."
                         );
                         return;
                       }
                       setVerificationError(null);
+                      const supabase = getSupabaseBrowserClient();
+                      const { error } = await supabase.auth.verifyOtp({
+                        email: email.trim(),
+                        token: code,
+                        type: "email",
+                      });
+                      if (error) {
+                        setVerificationError(error.message);
+                        return;
+                      }
                       setCreateStep("password");
                     }}
                   >
                     <div className="space-y-2">
                       <label className="block text-sm font-medium text-slate-200">
-                        Verification code
+                        Code
                       </label>
                       <input
                         type="text"
-                        className="w-full rounded-xl border border-slate-700/70 bg-slate-900/60 px-3.5 py-2.5 text-sm text-slate-50 shadow-inner shadow-black/40 outline-none ring-0 placeholder:text-slate-500"
-                        placeholder="Enter the 6-digit code"
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        maxLength={8}
+                        className="w-full rounded-xl border border-slate-700/70 bg-slate-900/60 px-3.5 py-2.5 text-center text-lg tracking-[0.35em] text-slate-50 shadow-inner shadow-black/40 outline-none ring-0 placeholder:text-slate-500 placeholder:tracking-normal"
+                        placeholder="000000"
                         value={verificationCode}
-                        onChange={(e) => setVerificationCode(e.target.value)}
+                        onChange={(e) =>
+                          setVerificationCode(
+                            e.target.value.replace(/\D/g, "").slice(0, 8)
+                          )
+                        }
                       />
                     </div>
-                    <button
-                      type="button"
-                      className="text-xs font-medium text-sky-400 hover:text-sky-300"
-                    >
-                      Didn&apos;t receive email?
-                    </button>
 
                     {verificationError && (
                       <p className="text-xs font-medium text-rose-400">
@@ -371,12 +430,42 @@ export default function Home() {
                       </p>
                     )}
 
+                    {!verificationSent && !isSendingVerification && (
+                      <p className="text-xs text-amber-400/90">
+                        No code yet? Check spam or resend below.
+                      </p>
+                    )}
+                    {isSendingVerification && (
+                      <p className="text-xs text-slate-400">Sending code…</p>
+                    )}
+
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                      <button
+                        type="button"
+                        disabled={isSendingVerification}
+                        onClick={() => void sendVerificationEmail()}
+                        className="text-sm font-medium text-sky-400 hover:text-sky-300 disabled:opacity-50"
+                      >
+                        Resend code
+                      </button>
+                      <button
+                        type="button"
+                        className="text-sm text-slate-500 hover:text-slate-300 sm:ml-auto"
+                        onClick={() => {
+                          setVerificationError(null);
+                          setCreateStep("details");
+                        }}
+                      >
+                        ← Back to details
+                      </button>
+                    </div>
+
                     <button
                       type="submit"
-                      disabled={!verificationCode.trim()}
+                      disabled={verificationCode.replace(/\s/g, "").length < 6}
                       className="mt-2 inline-flex w-full items-center justify-center rounded-full bg-slate-700/80 px-6 py-3 text-sm font-semibold text-slate-100 shadow-[0_16px_40px_rgba(15,23,42,0.8)] transition hover:bg-slate-600/90 disabled:cursor-not-allowed disabled:bg-slate-800/80 disabled:text-slate-400"
                     >
-                      Next
+                      Verify & continue
                     </button>
                   </form>
                 </>
@@ -530,15 +619,58 @@ export default function Home() {
 
                   <form
                     className="space-y-5 pt-2"
-                    onSubmit={(e) => {
+                    onSubmit={async (e) => {
                       e.preventDefault();
                       if (!username.trim()) {
                         setFormError("Choose a username to continue.");
                         return;
                       }
-                      setFormError(null);
-                      // Final step: close for now
-                      setShowCreateModal(false);
+                      if (createPassword.length < 8) {
+                        setFormError("Please choose a password first.");
+                        return;
+                      }
+                      try {
+                        setFormError(null);
+                        setIsCompletingSignup(true);
+                        const supabase = getSupabaseBrowserClient();
+                        const {
+                          data: { session },
+                        } = await supabase.auth.getSession();
+                        if (session?.user) {
+                          const { error } = await supabase.auth.updateUser({
+                            password: createPassword,
+                            data: {
+                              name,
+                              username,
+                              avatar: avatarChoice,
+                            },
+                          });
+                          if (error) {
+                            setFormError(error.message);
+                            return;
+                          }
+                        } else {
+                          const { error } = await supabase.auth.signUp({
+                            email,
+                            password: createPassword,
+                            options: {
+                              data: {
+                                name,
+                                username,
+                                avatar: avatarChoice,
+                              },
+                            },
+                          });
+                          if (error) {
+                            setFormError(error.message);
+                            return;
+                          }
+                        }
+                        setShowCreateModal(false);
+                        router.push("/feeds");
+                      } finally {
+                        setIsCompletingSignup(false);
+                      }
                     }}
                   >
                     <div className="space-y-2">
@@ -592,10 +724,10 @@ export default function Home() {
 
                     <button
                       type="submit"
-                      disabled={!username.trim()}
+                      disabled={!username.trim() || isCompletingSignup}
                       className="mt-1 inline-flex w-full items-center justify-center rounded-full bg-slate-700/80 px-6 py-3 text-sm font-semibold text-slate-100 shadow-[0_16px_40px_rgba(15,23,42,0.8)] transition hover:bg-slate-600/90 disabled:cursor-not-allowed disabled:bg-slate-800/80 disabled:text-slate-400"
                     >
-                      Next
+                      {isCompletingSignup ? "Creating..." : "Next"}
                     </button>
                   </form>
                 </>
@@ -640,14 +772,30 @@ export default function Home() {
 
               <form
                 className="space-y-5"
-                onSubmit={(e) => {
+                onSubmit={async (e) => {
                   e.preventDefault();
                   if (!signInEmail.trim() || !signInPassword.trim()) {
                     setSignInError("Please enter both email and password to log in.");
                     return;
                   }
                   setSignInError(null);
-                  // TODO: handle actual sign-in
+                  setIsSigningIn(true);
+                  try {
+                    const supabase = getSupabaseBrowserClient();
+                    const { error } = await supabase.auth.signInWithPassword({
+                      email: signInEmail.trim(),
+                      password: signInPassword,
+                    });
+                    if (error) {
+                      setSignInError(error.message);
+                      return;
+                    }
+                    setShowSignInModal(false);
+                    setSignInPassword("");
+                    router.push("/feeds");
+                  } finally {
+                    setIsSigningIn(false);
+                  }
                 }}
               >
                 <div className="space-y-2">
@@ -682,10 +830,14 @@ export default function Home() {
 
                 <button
                   type="submit"
-                  disabled={!signInEmail.trim() || !signInPassword.trim()}
+                  disabled={
+                    !signInEmail.trim() ||
+                    !signInPassword.trim() ||
+                    isSigningIn
+                  }
                   className="mt-2 inline-flex w-full items-center justify-center rounded-full bg-slate-700/80 px-6 py-3 text-sm font-semibold text-slate-100 shadow-[0_16px_40px_rgba(15,23,42,0.8)] transition hover:bg-slate-600/90 disabled:cursor-not-allowed disabled:bg-slate-800/80 disabled:text-slate-400"
                 >
-                  Log in
+                  {isSigningIn ? "Signing in…" : "Log in"}
                 </button>
 
                 <p className="pt-2 text-xs text-slate-400">
