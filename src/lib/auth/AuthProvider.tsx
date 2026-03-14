@@ -18,6 +18,8 @@ export type AuthSnapshot = {
   name: string;
   tag: string;
   avatarEmoji: string | null;
+  /** Set when user_metadata.avatar is an image URL or data URL */
+  avatarUrl: string | null;
   ready: boolean;
 };
 
@@ -26,12 +28,13 @@ const defaultSnap: AuthSnapshot = {
   name: "Guest",
   tag: "@guest",
   avatarEmoji: null,
+  avatarUrl: null,
   ready: false,
 };
 
 function snapshotFromUser(user: User | null): AuthSnapshot {
   if (!user) {
-    return { user: null, name: "Guest", tag: "@guest", avatarEmoji: null, ready: true };
+    return { user: null, name: "Guest", tag: "@guest", avatarEmoji: null, avatarUrl: null, ready: true };
   }
   const m = user.user_metadata || {};
   const n = m.name ?? m.full_name;
@@ -44,12 +47,18 @@ function snapshotFromUser(user: User | null): AuthSnapshot {
     typeof u === "string" && u.trim()
       ? `@${u.trim().replace(/^@/, "")}`
       : `@${user.email?.split("@")[0]?.replace(/[^a-zA-Z0-9._]/g, "") || "member"}`;
-  const emoji = m.avatar;
+  const av = m.avatar;
+  const avStr = typeof av === "string" ? av : "";
+  const isImage =
+    avStr.startsWith("http://") ||
+    avStr.startsWith("https://") ||
+    avStr.startsWith("data:image");
   return {
     user,
     name,
     tag,
-    avatarEmoji: typeof emoji === "string" ? emoji : null,
+    avatarEmoji: isImage ? null : avStr || null,
+    avatarUrl: isImage ? avStr : null,
     ready: true,
   };
 }
