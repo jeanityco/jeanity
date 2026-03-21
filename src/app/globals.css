@@ -8,9 +8,35 @@ body {
   margin: 0;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 body {
-  background-color: #020617; /* slate-950 */
-  color: #f9fafb; /* slate-50 */
+  background-color: #050505;
+  color: #f9fafb;
+}
+
+/* Landing hero — stacked cards */
+@keyframes hero-card-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-12px);
+  }
+}
+
+.animate-hero-cards {
+  animation: hero-card-float 8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-hero-cards {
+    animation: none;
+  }
 }
 
 /* Unified input focus style across the app */

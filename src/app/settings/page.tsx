@@ -2,15 +2,13 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FeedsCurrentUserHeader } from "@/app/feeds/FeedsCurrentUser";
-import {
-  AppBackground,
-  AppMobileNav,
-  AppSidebar,
-} from "@/components/AppSidebar";
-import { HeaderAccountMenu } from "@/components/HeaderAccountMenu";
+import { FeedsCurrentUserHeader } from "@/features/feeds/FeedsCurrentUser";
+import { AppPageHeader } from "@/components/shell/AppPageHeader";
+import { AppShell } from "@/components/shell/AppShell";
+import { HeaderAccountMenu } from "@/components/shell/HeaderAccountMenu";
 import { useAuthSnapshot } from "@/lib/auth/AuthProvider";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { shellSettingsColumn } from "@/lib/ui/appShellClasses";
 
 function Field({
   id,
@@ -84,17 +82,51 @@ export default function SettingsPage() {
     window.location.reload();
   }, []);
 
+  const MAX_AVATAR_PX = 256;
+  const MAX_AVATAR_QUALITY = 0.88;
+
   const onAvatarFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !file.type.startsWith("image/")) return;
-    if (file.size > 400 * 1024) {
-      setErr("Image must be under 400 KB.");
-      return;
-    }
     setErr("");
-    const r = new FileReader();
-    r.onload = () => setAvatar(String(r.result).slice(0, 50000));
-    r.readAsDataURL(file);
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const w = img.naturalWidth;
+      const h = img.naturalHeight;
+      let dw = w;
+      let dh = h;
+      if (w > MAX_AVATAR_PX || h > MAX_AVATAR_PX) {
+        if (w >= h) {
+          dw = MAX_AVATAR_PX;
+          dh = Math.round((h * MAX_AVATAR_PX) / w);
+        } else {
+          dh = MAX_AVATAR_PX;
+          dw = Math.round((w * MAX_AVATAR_PX) / h);
+        }
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = dw;
+      canvas.height = dh;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        setErr("Could not process image.");
+        return;
+      }
+      ctx.drawImage(img, 0, 0, dw, dh);
+      const dataUrl = canvas.toDataURL("image/jpeg", MAX_AVATAR_QUALITY);
+      if (dataUrl.length > 200_000) {
+        setErr("Image too large after resize. Try a simpler image.");
+        return;
+      }
+      setAvatar(dataUrl);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      setErr("Could not load image.");
+    };
+    img.src = url;
   };
 
   const saveAll = async () => {
@@ -114,6 +146,40 @@ export default function SettingsPage() {
     setSaving(true);
     try {
       const supabase = getSupabaseBrowserClient();
+      let avatarValue: string | null =
+        avatar.trim() || (typeof m.avatar === "string" ? m.avatar : null) || null;
+      if (avatarValue && avatarValue.startsWith("data:")) {
+        const base64 = avatarValue.split(",")[1];
+        if (!base64) {
+          setErr("Invalid image data.");
+          setSaving(false);
+          return;
+        }
+        const binary = atob(base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        const blob = new Blob([bytes], { type: "image/jpeg" });
+        const path = `${user.id}/avatar.jpg`;
+        const { error: uploadError } = await supabase.storage
+          .from("avatars")
+          .upload(path, blob, {
+            cacheControl: "3600",
+            upsert: true,
+            contentType: "image/jpeg",
+          });
+        if (uploadError) {
+          const msg = uploadError.message || "Upload failed.";
+          setErr(
+            msg.includes("Bucket not found") || msg.includes("not found")
+              ? "Storage bucket 'avatars' missing. In Supabase Dashboard: Storage → New bucket → name 'avatars' → Public ON, then run supabase/schema.sql for policies."
+              : msg
+          );
+          setSaving(false);
+          return;
+        }
+        const { data: urlData } = supabase.storage.from("avatars").getPublicUrl(path);
+        avatarValue = urlData.publicUrl;
+      }
       const payload: {
         password?: string;
         data: Record<string, unknown>;
@@ -122,10 +188,7 @@ export default function SettingsPage() {
           name: name.trim(),
           full_name: name.trim(),
           bio: bio.trim(),
-          avatar:
-            avatar.trim() ||
-            (typeof m.avatar === "string" ? m.avatar : null) ||
-            null,
+          avatar: avatarValue,
         },
       };
       if (password.length > 0) {
@@ -149,49 +212,30 @@ export default function SettingsPage() {
   };
 
   return (
-    <main className="h-dvh max-h-dvh overflow-hidden bg-[#0a0e1a] text-white antialiased lg:flex lg:min-h-0">
-      <AppBackground />
-      <AppSidebar active="feeds" />
-
-      <div className="relative z-10 flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden pb-28 pt-3 sm:pt-4 lg:pb-24 lg:pt-0">
-        <header className="z-10 shrink-0 border-b border-white/5 bg-[#0a0e1a]/80 px-4 py-3 backdrop-blur-xl sm:px-6 lg:px-8 lg:py-4">
-          <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
-            <div className="flex items-center gap-3 lg:gap-4">
-              <button
-                type="button"
-                aria-label="Menu"
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 lg:hidden"
-              >
-                <span className="flex flex-col gap-1">
-                  <span className="h-0.5 w-4 rounded-full bg-white/80" />
-                  <span className="h-0.5 w-4 rounded-full bg-white/80" />
-                  <span className="h-0.5 w-4 rounded-full bg-white/80" />
-                </span>
-              </button>
-              <div>
-                <h1 className="text-lg font-semibold tracking-tight text-white sm:text-xl lg:text-2xl">
-                  Settings
-                </h1>
-                <p className="hidden text-xs text-slate-500 sm:block lg:text-sm">
-                  Profile, avatar, bio, and password
-                </p>
-              </div>
-            </div>
-            <div className="flex min-w-0 flex-1 items-center justify-end gap-2 sm:gap-3 lg:flex-initial lg:gap-4">
+    <AppShell
+      active="feeds"
+      mainClassName="h-dvh max-h-dvh overflow-hidden bg-[#0a0e1a] text-white antialiased md:flex md:flex-row md:min-h-0"
+    >
+      <div className={shellSettingsColumn}>
+        <AppPageHeader
+          title="Settings"
+          subtitle="Profile, avatar, bio, and password"
+          trailing={
+            <>
               <FeedsCurrentUserHeader />
               <HeaderAccountMenu />
-            </div>
-          </div>
-        </header>
+            </>
+          }
+        />
 
         {/* Same width + horizontal padding as Search: mx-auto w-full max-w-3xl px-4 sm:px-6 lg:px-8 */}
-        <div className="mx-auto flex min-h-0 w-full min-w-0 max-w-3xl flex-1 flex-col overflow-hidden px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+        <div className="mx-auto flex min-h-0 w-full min-w-0 max-w-3xl flex-1 flex-col overflow-hidden px-3 py-5 sm:px-6 sm:py-6 md:px-8 md:py-8">
           {!ready ? (
             <p className="text-sm text-slate-500">Loading…</p>
           ) : !user ? (
             <p className="text-sm text-slate-400">
               Sign in to edit your account.{" "}
-              <Link href="/" className="text-sky-400 hover:underline">
+              <Link href="/" prefetch={false} className="text-sky-400 hover:underline">
                 Home
               </Link>
             </p>
@@ -292,8 +336,7 @@ export default function SettingsPage() {
           )}
         </div>
 
-        <AppMobileNav active="feeds" />
       </div>
-    </main>
+    </AppShell>
   );
 }

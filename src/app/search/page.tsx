@@ -1,52 +1,28 @@
 import Link from "next/link";
-import {
-  AppBackground,
-  AppMobileNav,
-  AppSidebar,
-} from "@/components/AppSidebar";
-import { FeedsCurrentUserHeader } from "@/app/feeds/FeedsCurrentUser";
-import { HeaderAccountMenu } from "@/components/HeaderAccountMenu";
+import { AppPageHeader } from "@/components/shell/AppPageHeader";
+import { AppShell } from "@/components/shell/AppShell";
+import { FeedsCurrentUserHeader } from "@/features/feeds/FeedsCurrentUser";
+import { HeaderAccountMenu } from "@/components/shell/HeaderAccountMenu";
+import { shellMainColumn } from "@/lib/ui/appShellClasses";
 
 const SUGGESTED = ["#jeanity", "#vibes", "#community", "#ranking", "#live"];
 
 export default function SearchPage() {
   return (
-    <main className="min-h-screen bg-[#0a0e1a] text-white antialiased lg:flex">
-      <AppBackground />
-      <AppSidebar active="search" />
-
-      <div className="relative z-10 flex min-h-screen min-w-0 flex-1 flex-col pb-28 pt-3 sm:pt-4 lg:pb-8 lg:pt-0">
-        <header className="sticky top-0 z-10 border-b border-white/5 bg-[#0a0e1a]/80 px-4 py-3 backdrop-blur-xl sm:px-6 lg:px-8 lg:py-4">
-          <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
-            <div className="flex items-center gap-3 lg:gap-4">
-              <button
-                type="button"
-                aria-label="Menu"
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 lg:hidden"
-              >
-                <span className="flex flex-col gap-1">
-                  <span className="h-0.5 w-4 rounded-full bg-white/80" />
-                  <span className="h-0.5 w-4 rounded-full bg-white/80" />
-                  <span className="h-0.5 w-4 rounded-full bg-white/80" />
-                </span>
-              </button>
-              <div>
-                <h1 className="text-lg font-semibold tracking-tight text-white sm:text-xl lg:text-2xl">
-                  Search
-                </h1>
-                <p className="hidden text-xs text-slate-500 sm:block lg:text-sm">
-                  People, tags, and vibes on Jeanity
-                </p>
-              </div>
-            </div>
-            <div className="flex min-w-0 flex-1 items-center justify-end gap-2 sm:gap-3 lg:flex-initial lg:gap-4">
+    <AppShell active="search">
+      <div className={shellMainColumn}>
+        <AppPageHeader
+          title="Search"
+          subtitle="People, tags, and vibes on Jeanity"
+          trailing={
+            <>
               <FeedsCurrentUserHeader />
               <HeaderAccountMenu />
-            </div>
-          </div>
-        </header>
+            </>
+          }
+        />
 
-        <div className="mx-auto w-full max-w-3xl flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+        <div className="mx-auto w-full max-w-3xl flex-1 px-3 py-5 sm:px-6 sm:py-6 md:px-8 md:py-8">
           <div className="relative mb-8">
             <span className="pointer-events-none absolute inset-y-0 left-4 flex items-center text-sky-400/80">
               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -84,6 +60,7 @@ export default function SearchPage() {
             </p>
             <Link
               href="/feeds"
+              prefetch={false}
               className="mt-4 inline-flex rounded-full bg-gradient-to-r from-emerald-400 via-sky-400 to-indigo-400 px-5 py-2 text-sm font-bold text-slate-950"
             >
               Back to Feeds
@@ -91,8 +68,6 @@ export default function SearchPage() {
           </section>
         </div>
       </div>
-
-      <AppMobileNav active="search" />
-    </main>
+    </AppShell>
   );
 }

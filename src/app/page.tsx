@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 const MONTHS = [
@@ -24,7 +23,6 @@ function getDaysInMonth(month: number, year: number) {
 }
 
 export default function Home() {
-  const router = useRouter();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showSignInModal, setShowSignInModal] = useState(false);
   const [dobMonth, setDobMonth] = useState<string>("");
@@ -105,108 +103,118 @@ export default function Home() {
 
   return (
     <>
-      <main className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center px-4 py-8 sm:px-6 sm:py-10">
-        <div className="relative w-full max-w-6xl overflow-hidden rounded-3xl bg-gradient-to-b from-slate-900/80 via-slate-950 to-slate-950 border border-white/5 shadow-[0_32px_100px_rgba(0,0,0,0.8)]">
-        {/* background orbits */}
-          <div className="pointer-events-none absolute inset-0">
-            <div className="absolute -top-40 -left-24 h-72 w-72 rounded-full bg-[radial-gradient(circle_at_center,#4ade80_0%,transparent_60%)] opacity-40 blur-3xl" />
-            <div className="absolute -bottom-32 -right-10 h-80 w-80 rounded-full bg-[radial-gradient(circle_at_center,#38bdf8_0%,transparent_60%)] opacity-40 blur-3xl" />
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.18),transparent_60%)] opacity-40" />
-          </div>
+      <main className="relative flex min-h-dvh min-h-[100svh] w-full flex-col overflow-x-hidden bg-[#050505] text-slate-50 antialiased">
+        {/* Full-page ambient glows */}
+        <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
+          <div className="absolute -left-[15%] top-[-20%] h-[min(90vh,720px)] w-[min(90vw,720px)] rounded-full bg-teal-500/[0.12] blur-[100px]" />
+          <div className="absolute -right-[10%] bottom-[-25%] h-[min(85vh,640px)] w-[min(85vw,640px)] rounded-full bg-sky-600/[0.14] blur-[110px]" />
+          <div className="absolute left-1/2 top-1/3 h-[50vh] w-[80vw] max-w-4xl -translate-x-1/2 rounded-full bg-emerald-400/[0.06] blur-[90px]" />
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_120%_80%_at_50%_-20%,rgba(255,255,255,0.07),transparent_55%)]" />
+        </div>
 
-          <div className="relative z-10 grid gap-10 px-6 py-8 sm:px-8 sm:py-10 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] md:px-12 md:py-12 lg:px-20 lg:py-16">
-          {/* Card stack */}
-            <div className="flex items-center justify-center md:justify-start">
-              <div className="relative h-72 w-48 xs:h-80 xs:w-56 sm:h-80 sm:w-60 md:h-96 md:w-72">
-              {/* back card */}
-                <div className="absolute left-5 top-8 h-60 w-44 sm:left-7 sm:top-10 sm:h-64 sm:w-48 md:left-10 md:h-80 md:w-60 rounded-3xl bg-gradient-to-br from-sky-500 via-indigo-500 to-violet-500 opacity-70 blur-[1px] shadow-[0_24px_60px_rgba(15,23,42,0.8)] ring-1 ring-white/15" />
+        {/* Glass surface — fills viewport */}
+        <div className="relative z-[1] flex min-h-dvh min-h-[100svh] flex-1 flex-col border-y border-white/[0.07] bg-gradient-to-b from-white/[0.06] via-[#0a0a0c]/75 to-[#050505]/90 backdrop-blur-[32px] sm:border-x sm:border-white/[0.06] md:m-3 md:min-h-[calc(100dvh-1.5rem)] md:rounded-[2rem] md:shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_40px_120px_rgba(0,0,0,0.65)]">
+          <div className="flex flex-1 flex-col justify-center px-4 py-8 pt-[max(1.25rem,env(safe-area-inset-top,0px))] pb-[max(1.5rem,env(safe-area-inset-bottom,0px))] sm:px-8 sm:py-12 md:px-14 md:py-14 lg:px-20 lg:py-16 xl:px-24">
+            <div className="mx-auto grid w-full max-w-6xl flex-1 items-center gap-10 md:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] md:gap-14 lg:gap-16 xl:gap-20">
+              {/* Card stack */}
+              <div className="flex justify-center md:justify-start">
+                <div className="animate-hero-cards relative h-[min(52vw,280px)] w-[min(42vw,200px)] sm:h-80 sm:w-56 md:h-96 md:w-64 lg:h-[22rem] lg:w-72">
+                  {/* Back — deep cyan / navy tilt */}
+                  <div
+                    className="absolute left-6 top-10 h-[85%] w-[78%] rounded-[1.35rem] bg-gradient-to-b from-cyan-500/90 via-teal-600 to-slate-900 opacity-80 shadow-[0_0_60px_rgba(34,211,238,0.25),0_24px_50px_rgba(0,0,0,0.6)] ring-1 ring-white/20 sm:left-8 sm:top-12 md:left-10"
+                    style={{ transform: "rotate(-14deg)" }}
+                  />
 
-              {/* middle card */}
-                <div className="absolute left-1.5 top-4 h-60 w-44 sm:left-3 sm:top-6 sm:h-64 sm:w-48 md:left-6 md:h-80 md:w-60 -rotate-6 rounded-3xl bg-slate-900/80 shadow-[0_24px_80px_rgba(0,0,0,0.85)] ring-1 ring-white/15 backdrop-blur-xl">
-                  <div className="flex h-full flex-col justify-between p-4 sm:p-5 md:p-6">
-                    <div className="space-y-3">
-                      <div className="h-24 sm:h-28 w-full overflow-hidden rounded-2xl bg-gradient-to-tr from-slate-700 via-slate-500 to-slate-300" />
-                      <div className="space-y-1">
-                        <p className="text-xs font-medium uppercase tracking-[0.2em] text-slate-400">
-                          VibeHive
-                        </p>
-                        <p className="text-xs text-emerald-400">Active now</p>
+                  {/* Middle — glass */}
+                  <div
+                    className="absolute left-2 top-5 h-[85%] w-[78%] -rotate-6 rounded-[1.35rem] bg-[#0c0f14]/85 shadow-[0_24px_70px_rgba(0,0,0,0.75)] ring-1 ring-white/12 backdrop-blur-md sm:left-3 sm:top-6 md:left-4"
+                  >
+                    <div className="flex h-full flex-col justify-between p-4 sm:p-5">
+                      <div className="space-y-2.5">
+                        <div className="h-20 w-full rounded-xl bg-gradient-to-br from-slate-600 via-slate-500 to-slate-400 sm:h-24" />
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">
+                            Space
+                          </p>
+                          <p className="text-[11px] font-medium text-emerald-400/90">Live now</p>
+                        </div>
                       </div>
+                      <span className="inline-flex items-center justify-center rounded-full bg-white/90 py-2 text-[10px] font-bold text-slate-900">
+                        Follow
+                      </span>
                     </div>
-                    <button className="inline-flex items-center justify-center rounded-full bg-slate-50 px-4 py-2 text-xs font-semibold text-slate-950 shadow-sm transition hover:bg-slate-200">
-                      Follow
-                    </button>
                   </div>
-                </div>
 
-                {/* front card */}
-                <div className="absolute right-0 top-0 h-60 w-44 sm:h-64 sm:w-48 md:h-80 md:w-60 rotate-6 rounded-3xl bg-gradient-to-br from-emerald-400 via-lime-300 to-sky-300 shadow-[0_24px_80px_rgba(16,185,129,0.55)] ring-1 ring-white/40 backdrop-blur-xl">
-                  <div className="flex h-full flex-col justify-between p-4 sm:p-5 md:p-6">
-                    <div className="space-y-3">
-                      <div className="h-24 sm:h-28 w-full overflow-hidden rounded-2xl bg-gradient-to-tr from-amber-400 via-red-400 to-rose-500" />
-                      <div className="space-y-1">
-                        <p className="text-xs font-medium uppercase tracking-[0.2em] text-slate-900/80">
-                          Jeanity
-                        </p>
-                        <p className="text-xs text-slate-900/80">Active now</p>
+                  {/* Front — lime → cyan + coral media + lime glow */}
+                  <div
+                    className="absolute right-0 top-0 h-[88%] w-[82%] rotate-[7deg] rounded-[1.35rem] bg-gradient-to-b from-[#bef264] via-[#4ade80] to-[#22d3ee] p-[1px] shadow-[0_0_80px_rgba(163,230,53,0.45),0_28px_80px_rgba(0,0,0,0.45)] sm:rotate-6"
+                  >
+                    <div className="flex h-full flex-col justify-between rounded-[1.28rem] bg-gradient-to-b from-[#d9f99d]/95 via-[#86efac] to-[#67e8f9]/90 p-4 sm:p-5">
+                      <div className="space-y-2.5">
+                        <div className="h-20 w-full overflow-hidden rounded-xl bg-gradient-to-br from-[#fb923c] via-[#f97316] to-[#ec4899] shadow-inner sm:h-24" />
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-900/75">
+                            JEANITY
+                          </p>
+                          <p className="text-[11px] font-semibold text-slate-800/80">Active now</p>
+                        </div>
                       </div>
+                      <span className="inline-flex items-center justify-center rounded-full bg-[#0a0a0a] py-2 text-[10px] font-bold tracking-wide text-white ring-1 ring-black/40">
+                        Follow
+                      </span>
                     </div>
-                    <button className="inline-flex items-center justify-center rounded-full bg-slate-950/90 px-4 py-2 text-xs font-semibold text-slate-50 shadow-sm ring-1 ring-slate-900/60 transition hover:bg-black">
-                      Follow
-                    </button>
                   </div>
                 </div>
               </div>
-            </div>
 
-            {/* Content / CTA */}
-            <div className="flex flex-col justify-between space-y-8">
-              <div className="space-y-4">
-                <p className="text-sm font-semibold uppercase tracking-[0.25em] text-slate-400">
-                  Jeanity
-                </p>
-                <div className="space-y-2">
-                  <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-semibold leading-tight text-slate-50">
-                    Connect Beyond
+              {/* Copy + CTAs */}
+              <div className="flex flex-col justify-center space-y-10">
+                <div className="space-y-6">
+                  <p className="text-xs font-bold uppercase tracking-[0.35em] text-slate-500 sm:text-sm">
+                    JEANITY
+                  </p>
+                  <h1 className="max-w-xl text-[clamp(1.85rem,5vw,3.25rem)] font-bold leading-[1.08] tracking-tight">
+                    <span className="text-white">Connect Beyond </span>
+                    <span className="text-slate-500">Boundaries</span>
                   </h1>
-                  <p className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-semibold leading-tight text-slate-400">
-                    Boundaries
+                  <p className="max-w-lg text-base leading-relaxed text-slate-400 sm:text-lg">
+                    Jeanity helps you discover real-time vibes, join meaningful conversations,
+                    and build connections that feel close&nbsp;— even when you are worlds apart.
                   </p>
                 </div>
-                <p className="max-w-md text-sm leading-relaxed text-slate-300 md:text-base">
-                  Jeanity helps you discover real-time vibes, join meaningful conversations,
-                  and build connections that feel close&nbsp;— even when you are worlds apart.
-                </p>
-              </div>
 
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCreateStep("details");
-                    setFormError(null);
-                    setVerificationCode("");
-                    setVerificationError(null);
-                    setVerificationSent(false);
-                    setShowCreateModal(true);
-                  }}
-                  className="group inline-flex items-center justify-center rounded-full bg-gradient-to-r from-emerald-400 via-sky-400 to-indigo-400 px-8 py-3 text-sm font-semibold text-slate-950 shadow-[0_20px_45px_rgba(8,47,73,0.75)] transition-transform hover:translate-y-0.5 hover:shadow-[0_26px_70px_rgba(8,47,73,0.9)]"
-                >
-                  <span className="mr-2 text-xs font-semibold uppercase tracking-[0.22em] text-slate-900/80">
-                    Create account
-                  </span>
-                  <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-slate-950/90 text-xs text-slate-50 ring-1 ring-slate-900/70 transition group-hover:translate-x-0.5">
-                    →
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowSignInModal(true)}
-                  className="inline-flex items-center justify-center rounded-full border border-slate-500/50 bg-slate-900/40 px-6 py-2.5 text-sm font-medium text-slate-100/85 shadow-[0_10px_30px_rgba(15,23,42,0.7)] backdrop-blur-md transition hover:border-slate-200/70 hover:bg-slate-900/70"
-                >
-                  <span className="mr-2 h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_12px_rgba(74,222,128,0.9)]" />
-                  Sign In
-                </button>
+                <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCreateStep("details");
+                      setFormError(null);
+                      setVerificationCode("");
+                      setVerificationError(null);
+                      setVerificationSent(false);
+                      setShowCreateModal(true);
+                    }}
+                    className="group relative inline-flex w-full items-center justify-between gap-4 overflow-hidden rounded-full bg-gradient-to-r from-[#4ade80] via-[#22c55e] to-[#0ea5e9] px-6 py-3.5 pl-8 text-left shadow-[0_16px_50px_rgba(34,197,94,0.35),0_8px_30px_rgba(14,165,233,0.2)] transition hover:shadow-[0_20px_60px_rgba(34,197,94,0.45)] sm:w-auto sm:min-w-[280px]"
+                  >
+                    <span className="text-xs font-bold uppercase tracking-[0.2em] text-slate-950/90">
+                      Create account
+                    </span>
+                    <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#0a0a0a] text-sm text-white shadow-inner ring-1 ring-white/10 transition group-hover:translate-x-0.5">
+                      →
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowSignInModal(true)}
+                    className="inline-flex w-full items-center justify-center gap-2.5 rounded-full border border-white/15 bg-[#0a0a0a]/60 px-7 py-3 text-sm font-semibold text-slate-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-sm transition hover:border-white/25 hover:bg-[#121214]/80 sm:w-auto"
+                  >
+                    <span
+                      className="h-2 w-2 shrink-0 rounded-full bg-[#4ade80] shadow-[0_0_14px_rgba(74,222,128,0.95)]"
+                      aria-hidden
+                    />
+                    Sign In
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -541,13 +549,13 @@ export default function Home() {
                   </div>
 
                   <div className="flex flex-col items-center gap-6 pt-2">
-                    <div className="relative flex h-24 w-24 items-center justify-center rounded-full bg-slate-800/80 ring-4 ring-slate-700 shadow-[0_18px_40px_rgba(15,23,42,0.9)]">
+                    <div className="relative flex h-24 w-24 items-center justify-center rounded-2xl bg-slate-800/80 ring-4 ring-slate-700 shadow-[0_18px_40px_rgba(15,23,42,0.9)]">
                       <span className="text-4xl">
                         {avatarChoice || "👤"}
                       </span>
                       <button
                         type="button"
-                        className="absolute -bottom-1 -right-1 flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-tr from-emerald-400 to-sky-400 text-slate-950 text-lg shadow-[0_10px_25px_rgba(34,197,94,0.7)]"
+                        className="absolute -bottom-1 -right-1 flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-tr from-emerald-400 to-sky-400 text-slate-950 text-lg shadow-[0_10px_25px_rgba(34,197,94,0.7)]"
                       >
                         +
                       </button>
@@ -579,7 +587,7 @@ export default function Home() {
                             key={emoji}
                             type="button"
                             onClick={() => setAvatarChoice(emoji)}
-                            className={`flex h-10 w-10 items-center justify-center rounded-full border text-xl transition ${
+                            className={`flex h-10 w-10 items-center justify-center rounded-xl border text-xl transition ${
                               avatarChoice === emoji
                                 ? "border-emerald-400 bg-slate-900/80 shadow-[0_0_20px_rgba(16,185,129,0.7)]"
                                 : "border-slate-700 bg-slate-900/40 hover:border-slate-400"
@@ -667,7 +675,7 @@ export default function Home() {
                           }
                         }
                         setShowCreateModal(false);
-                        router.push("/feeds");
+                        window.location.href = "/feeds";
                       } finally {
                         setIsCompletingSignup(false);
                       }
@@ -792,7 +800,7 @@ export default function Home() {
                     }
                     setShowSignInModal(false);
                     setSignInPassword("");
-                    router.push("/feeds");
+                    window.location.href = "/feeds";
                   } finally {
                     setIsSigningIn(false);
                   }

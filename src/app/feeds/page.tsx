@@ -2,24 +2,25 @@
 
 import {
   FeedsCurrentUserHeader,
-} from "@/app/feeds/FeedsCurrentUser";
-import { FeedsPostList } from "@/app/feeds/FeedsPostList";
-import { FeedsRankingList } from "@/app/feeds/FeedsRankingList";
-import { useState } from "react";
-import {
-  AppBackground,
-  AppMobileNav,
-  AppSidebar,
-} from "@/components/AppSidebar";
-import { HeaderAccountMenu } from "@/components/HeaderAccountMenu";
-import { usePostComposer } from "@/app/feeds/PostComposerModal";
+} from "@/features/feeds/FeedsCurrentUser";
+import { FeedsPostList } from "@/features/feeds/FeedsPostList";
+import { FeedsRankingList } from "@/features/feeds/FeedsRankingList";
+import { useMemo, useState } from "react";
+import { AppPageHeader } from "@/components/shell/AppPageHeader";
+import { AppShell } from "@/components/shell/AppShell";
+import { HeaderAccountMenu } from "@/components/shell/HeaderAccountMenu";
+import { usePostComposer } from "@/features/feeds/PostComposerModal";
+import { useStoryViewer } from "@/features/feeds/StoryViewer";
+import { useFeedsPosts } from "@/features/feeds/FeedsPostsContext";
 import { useAuthSnapshot } from "@/lib/auth/AuthProvider";
+import { normalizeUserTag } from "@/lib/profilePath";
+import { shellMainColumn } from "@/lib/ui/appShellClasses";
 
 const TABS = ["Feeds", "Ranking", "Community"] as const;
 type FeedTab = (typeof TABS)[number];
 
-/** Squircle ≈ iOS app icon curve (same % on square) */
-const STORY_SQUIRCLE = "rounded-[28%]";
+/** Story avatar shape: square with rounded corners */
+const STORY_AVATAR_SHAPE = "rounded-xl";
 
 const STORY_GRADS = [
   "linear-gradient(90deg,#0f766e,#134e4a 35%,#22d3ee)", // teal → cyan (reference)
@@ -44,69 +45,64 @@ function StoryDiamond({ className = "" }: { className?: string }) {
 export default function FeedsPage() {
   const [tab, setTab] = useState<FeedTab>("Feeds");
   const { openStory } = usePostComposer();
-  const { name, avatarUrl, avatarEmoji, ready } = useAuthSnapshot();
+  const { openViewer } = useStoryViewer();
+  const { posts, postsLoading } = useFeedsPosts();
+  const { name, tag, avatarUrl, avatarEmoji, ready } = useAuthSnapshot();
   const storyInitial = ready ? name.charAt(0).toUpperCase() || "?" : "…";
-  return (
-    <main className="min-h-screen bg-[#0a0e1a] text-white antialiased lg:flex">
-      <AppBackground />
-      <AppSidebar active="feeds" />
 
-      {/* ——— Main column ——— */}
-      <div className="relative z-10 flex min-h-screen min-w-0 flex-1 flex-col pb-28 pt-3 sm:pt-4 lg:pb-8 lg:pt-0">
-        {/* Top bar: compact mobile / full desktop */}
-        <header className="sticky top-0 z-10 border-b border-white/5 bg-[#0a0e1a]/80 px-4 py-3 backdrop-blur-xl sm:px-6 lg:px-8 lg:py-4">
-          <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
-            <div className="flex items-center gap-3 lg:gap-4">
-              <button
-                type="button"
-                aria-label="Menu"
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 lg:hidden"
-              >
-                <span className="flex flex-col gap-1">
-                  <span className="h-0.5 w-4 rounded-full bg-white/80" />
-                  <span className="h-0.5 w-4 rounded-full bg-white/80" />
-                  <span className="h-0.5 w-4 rounded-full bg-white/80" />
-                </span>
-              </button>
-              <div>
-                <h1 className="text-lg font-semibold tracking-tight text-white sm:text-xl lg:text-2xl">
-                  {tab === "Feeds" ? "Feeds" : tab === "Ranking" ? "Ranking" : "Community"}
-                </h1>
-                <p className="hidden text-xs text-slate-500 sm:block lg:text-sm">
-                  {tab === "Feeds"
-                    ? "Stories, communities, and what's trending"
-                    : tab === "Ranking"
-                      ? "Top tools and creators on Jeanity"
-                      : "Spaces and people you can join"}
-                </p>
-              </div>
-            </div>
-            <div className="flex min-w-0 flex-1 items-center justify-end gap-2 sm:gap-3 lg:flex-initial lg:gap-4">
+  const myStories = useMemo(() => {
+    const t = normalizeUserTag(tag);
+    return posts.filter((p) => p.surface === "Story" && p.authorTag === t);
+  }, [posts, tag]);
+
+  const onYourStoryClick = () => {
+    if (myStories.length > 0) {
+      openViewer(myStories, 0);
+    } else {
+      openStory();
+    }
+  };
+  const headerTitle = tab === "Feeds" ? "Feeds" : tab === "Ranking" ? "Ranking" : "Community";
+  const headerSubtitle =
+    tab === "Feeds"
+      ? "Stories, communities, and what's trending"
+      : tab === "Ranking"
+        ? "Top tools and creators on Jeanity"
+        : "Spaces and people you can join";
+
+  return (
+    <AppShell active="feeds">
+      <div className={shellMainColumn}>
+        <AppPageHeader
+          title={headerTitle}
+          subtitle={headerSubtitle}
+          trailing={
+            <>
               <FeedsCurrentUserHeader />
               <HeaderAccountMenu />
-            </div>
-          </div>
-        </header>
+            </>
+          }
+        />
 
         {/* Content grid: main + optional right rail on xl */}
-        <div className="mx-auto flex w-full max-w-6xl flex-1 gap-8 px-4 py-6 sm:px-6 lg:px-8 lg:py-8 xl:gap-10">
+        <div className="mx-auto flex w-full max-w-6xl gap-6 px-3 py-4 sm:gap-8 sm:px-6 sm:py-5 md:px-8 md:py-6 xl:gap-10">
           <div className="min-w-0 flex-1 space-y-6 lg:space-y-8">
             {tab === "Feeds" && (
             <>
             {/* Stories: squircle tiles (teal→cyan + diamond), scroll mobile */}
-            <section className="scrollbar-hide -mx-1 overflow-x-auto overflow-y-visible pb-3 pt-0.5 lg:overflow-visible lg:pb-2 lg:pt-0">
-              <div className="flex w-max gap-4 px-1 lg:flex-wrap lg:w-full lg:gap-5">
+            <section className="scrollbar-hide -mx-1 overflow-x-auto overflow-y-visible pb-3 pt-0.5 md:overflow-visible md:pb-2 md:pt-0">
+              <div className="flex w-max gap-3 px-1 sm:gap-4 md:w-full md:flex-wrap md:gap-5">
                 <button
                   type="button"
                   aria-label="Add your story"
-                  onClick={() => openStory()}
+                  onClick={onYourStoryClick}
                   className="flex w-[72px] flex-col items-center gap-2.5 overflow-visible rounded-xl border-0 bg-transparent p-0 pb-0.5 text-left lg:w-[80px] lg:gap-3"
                 >
                   <div
-                    className={`relative flex h-[68px] w-[68px] items-center justify-center overflow-visible border-2 border-dashed border-white/20 bg-white/[0.03] p-[3px] transition hover:border-emerald-400/40 hover:bg-white/[0.06] lg:h-20 lg:w-20 ${STORY_SQUIRCLE}`}
+                    className={`relative flex h-[68px] w-[68px] items-center justify-center overflow-visible border-2 border-dashed border-white/20 bg-white/[0.03] p-[3px] transition hover:border-emerald-400/40 hover:bg-white/[0.06] lg:h-20 lg:w-20 ${STORY_AVATAR_SHAPE}`}
                   >
                     <div
-                      className={`relative h-full w-full overflow-hidden shadow-inner ring-1 ring-white/10 ${STORY_SQUIRCLE}`}
+                      className={`relative h-full w-full overflow-hidden shadow-inner ring-1 ring-white/10 ${STORY_AVATAR_SHAPE}`}
                     >
                       {/* Current user avatar */}
                       {avatarUrl ? (
@@ -151,7 +147,7 @@ export default function FeedsPage() {
                     className="flex w-[68px] shrink-0 flex-col items-center gap-2 lg:w-20"
                   >
                     <div
-                      className={`flex h-[68px] w-[68px] items-center justify-center shadow-md ring-1 ring-white/15 lg:h-20 lg:w-20 ${STORY_SQUIRCLE}`}
+                      className={`flex h-[68px] w-[68px] items-center justify-center shadow-md ring-1 ring-white/15 lg:h-20 lg:w-20 ${STORY_AVATAR_SHAPE}`}
                       style={{ backgroundImage: grad }}
                     >
                       <StoryDiamond className="h-2.5 w-2.5 lg:h-3 lg:w-3" />
@@ -238,20 +234,46 @@ export default function FeedsPage() {
               </section>
             </div>
 
-            {/* Posts (under Discover row) — includes composer + sample */}
-            <FeedsPostList />
+            {/* Posts (under Discover row) */}
+            {postsLoading ? (
+              <div className="space-y-5 lg:space-y-6" aria-busy="true" aria-label="Loading posts">
+                {[1, 2, 3].map((i) => (
+                  <article
+                    key={i}
+                    className="overflow-hidden rounded-2xl border border-white/8 bg-[#0f1419] ring-1 ring-white/[0.06]"
+                  >
+                    <div className="flex items-start gap-3 p-4 pb-3 sm:p-5">
+                      <div className="h-11 w-11 shrink-0 animate-pulse rounded-xl bg-white/10 sm:h-12 sm:w-12" />
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <div className="h-4 w-32 animate-pulse rounded bg-white/10" />
+                        <div className="h-3 w-24 animate-pulse rounded bg-white/5" />
+                        <div className="h-3 w-full max-w-sm animate-pulse rounded bg-white/5" />
+                      </div>
+                    </div>
+                    <div className="aspect-video w-full animate-pulse bg-white/5" />
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <FeedsPostList />
+            )}
             </>
             )}
           </div>
 
-          {/* Right rail: xl only */}
-          <aside className="hidden w-72 shrink-0 xl:block">
-            <div className="sticky top-24 space-y-4 rounded-2xl border border-white/5 bg-white/[0.03] p-5 backdrop-blur-sm">
+          {/* Right rail: xl only — scrollable so it isn’t clipped above the fold */}
+          <aside className="hidden w-72 min-w-0 shrink-0 self-start xl:block">
+            <div className="sticky top-20 z-[5] max-h-[calc(100dvh-5.5rem)] space-y-4 overflow-y-auto overscroll-y-contain rounded-2xl border border-white/5 bg-white/[0.03] p-5 pb-6 backdrop-blur-sm">
               <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">For you</p>
-              <p className="text-sm text-slate-400">Suggestions and activity will appear here.</p>
-              <div className="space-y-2 pt-2">
+              <p className="text-sm leading-relaxed text-slate-400">
+                Suggestions and activity will appear here.
+              </p>
+              <div className="space-y-2 pt-1">
                 {["#welcome", "#feeds", "#community"].map((tag) => (
-                  <div key={tag} className="rounded-xl bg-white/5 px-3 py-2 text-xs text-slate-400 ring-1 ring-white/5">
+                  <div
+                    key={tag}
+                    className="rounded-xl bg-white/5 px-3 py-2.5 text-xs text-slate-400 ring-1 ring-white/5"
+                  >
                     {tag}
                   </div>
                 ))}
@@ -260,8 +282,7 @@ export default function FeedsPage() {
           </aside>
         </div>
 
-        <AppMobileNav active="feeds" />
       </div>
-    </main>
+    </AppShell>
   );
 }

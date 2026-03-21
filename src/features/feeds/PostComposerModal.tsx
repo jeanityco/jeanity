@@ -10,20 +10,10 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import {
-  useFeedsPosts,
-  type PostSurface,
-} from "@/app/feeds/FeedsPostsContext";
+import { useFeedsPosts } from "@/features/feeds/FeedsPostsContext";
+import type { PostSurface } from "@/features/feeds/feedsPostTypes";
 import { useAuthSnapshot } from "@/lib/auth/AuthProvider";
-
-function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(String(r.result));
-    r.onerror = reject;
-    r.readAsDataURL(file);
-  });
-}
+import { readFileAsDataUrl } from "@/lib/readFileAsDataUrl";
 
 const LAUNCH_CATEGORIES = [
   "Productivity",
@@ -46,11 +36,13 @@ export function usePostComposer() {
     openPost: () => open?.("Post"),
     /** Opens composer on Story tab (photo / text story picker). */
     openStory: () => open?.("Story"),
+    /** Opens composer on Launch tab (product / listing). */
+    openLaunch: () => open?.("Launch"),
   };
 }
 
 /**
- * Wraps the app so any child can open the post composer (Messages + sidebar Post).
+ * Wraps the app so any child can open the post composer (feeds + sidebar Post).
  * Renders the modal portal once.
  */
 export function PostComposerProvider({ children }: { children: ReactNode }) {
@@ -188,7 +180,7 @@ export function PostComposerProvider({ children }: { children: ReactNode }) {
           launchLogoDataUrl = launchLogoPreview;
         }
       }
-      addPost({
+      await addPost({
         authorName,
         authorTag,
         avatarUrl: null,
@@ -213,7 +205,7 @@ export function PostComposerProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    addPost({
+    await addPost({
       authorName,
       authorTag,
       avatarUrl: null,

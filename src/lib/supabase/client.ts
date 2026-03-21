@@ -17,6 +17,3 @@ export function getSupabaseBrowserClient() {
   }
   return globalForSupabase.__jeanitySupabaseClient;
 }
-
-/** @deprecated use getSupabaseBrowserClient() */
-export const createSupabaseBrowserClient = () => getSupabaseBrowserClient();
