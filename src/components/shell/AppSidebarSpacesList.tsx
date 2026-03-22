@@ -29,26 +29,81 @@ export function AppSidebarSpacesList() {
 
   useEffect(() => {
     const supabase = getSupabaseBrowserClient();
+    const chRef: { current: ReturnType<typeof supabase.channel> | null } = { current: null };
+    let cancelled = false;
+
     const load = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       const user = session?.user;
       if (!user) {
         setSpaces([]);
         setLoading(false);
         return;
       }
-      const { data } = await supabase
-        .from("spaces")
-        .select("id, code, name, icon_url")
-        .eq("created_by", user.id)
-        .order("created_at", { ascending: false });
-      setSpaces((data ?? []) as Space[]);
+      const { data: memberships, error: memErr } = await supabase
+        .from("space_members")
+        .select("space_id, joined_at")
+        .eq("user_id", user.id)
+        .order("joined_at", { ascending: false });
+      if (memErr) {
+        console.error("sidebar space_members:", memErr);
+        setSpaces([]);
+      } else if (!memberships?.length) {
+        setSpaces([]);
+      } else {
+        const ids = memberships.map((m: { space_id: string }) => m.space_id);
+        const { data: spaceRows, error: spErr } = await supabase
+          .from("spaces")
+          .select("id, code, name, icon_url")
+          .in("id", ids);
+        if (spErr) {
+          console.error("sidebar spaces:", spErr);
+          setSpaces([]);
+        } else {
+          const rows = (spaceRows ?? []) as Space[];
+          const byId = new Map(rows.map((s) => [s.id, s]));
+          const list: Space[] = [];
+          for (const m of memberships as { space_id: string }[]) {
+            const s = byId.get(m.space_id);
+            if (s?.id && s?.code) list.push(s);
+          }
+          setSpaces(list);
+        }
+      }
       setLoading(false);
     };
-    load();
-    const ch = supabase.channel("sidebar-spaces").on("postgres_changes", { event: "*", schema: "public", table: "spaces" }, () => load()).subscribe();
+
+    void (async () => {
+      await load();
+      if (cancelled) return;
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const uid = session?.user?.id;
+      const ch = supabase.channel(uid ? `sidebar-spaces:${uid}` : "sidebar-spaces:anon");
+      ch.on("postgres_changes", { event: "*", schema: "public", table: "spaces" }, () => load());
+      if (uid) {
+        ch.on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "space_members", filter: `user_id=eq.${uid}` },
+          () => load(),
+        );
+      }
+      if (cancelled) {
+        supabase.removeChannel(ch);
+        return;
+      }
+      chRef.current = ch;
+      await ch.subscribe();
+    })();
+
     return () => {
-      supabase.removeChannel(ch);
+      cancelled = true;
+      const c = chRef.current;
+      chRef.current = null;
+      if (c) supabase.removeChannel(c);
     };
   }, []);
 

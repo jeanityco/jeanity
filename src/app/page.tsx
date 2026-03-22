@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { safeAppPathRedirect } from "@/lib/auth/safeRedirect";
 
 const MONTHS = [
   "January",
@@ -22,6 +23,20 @@ function getDaysInMonth(month: number, year: number) {
   return new Date(year, month, 0).getDate();
 }
 
+/** Sign-up “avatar” step: interests → auth metadata + `public.profiles.interest_categories`. */
+const SIGNUP_CATEGORY_OPTIONS = [
+  "SaaS",
+  "AI",
+  "Fintech",
+  "Developer tools",
+  "Design",
+  "Productivity",
+  "Community",
+  "Gaming",
+  "Music",
+  "Health & fitness",
+] as const;
+
 export default function Home() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showSignInModal, setShowSignInModal] = useState(false);
@@ -39,6 +54,7 @@ export default function Home() {
     null
   );
   const [avatarChoice, setAvatarChoice] = useState<string | null>(null);
+  const [interestCategories, setInterestCategories] = useState<string[]>([]);
   const [username, setUsername] = useState<string>("");
   const [signInEmail, setSignInEmail] = useState<string>("");
   const [signInPassword, setSignInPassword] = useState<string>("");
@@ -87,6 +103,12 @@ export default function Home() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only auto-send when opening verification step
   }, [showCreateModal, createStep]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const p = new URLSearchParams(window.location.search);
+    if (p.get("signup") === "1") setShowCreateModal(true);
+  }, []);
 
   const yearOptions = useMemo(() => {
     const current = new Date().getFullYear();
@@ -192,6 +214,7 @@ export default function Home() {
                       setVerificationCode("");
                       setVerificationError(null);
                       setVerificationSent(false);
+                      setInterestCategories([]);
                       setShowCreateModal(true);
                     }}
                     className="group relative inline-flex w-full items-center justify-between gap-4 overflow-hidden rounded-full bg-gradient-to-r from-[#4ade80] via-[#22c55e] to-[#0ea5e9] px-6 py-3.5 pl-8 text-left shadow-[0_16px_50px_rgba(34,197,94,0.35),0_8px_30px_rgba(14,165,233,0.2)] transition hover:shadow-[0_20px_60px_rgba(34,197,94,0.45)] sm:w-auto sm:min-w-[280px]"
@@ -573,6 +596,10 @@ export default function Home() {
                         setFormError("Pick one avatar vibe to continue.");
                         return;
                       }
+                      if (interestCategories.length === 0) {
+                        setFormError("Choose at least one category you're interested in.");
+                        return;
+                      }
                       setFormError(null);
                       setCreateStep("username");
                     }}
@@ -599,6 +626,40 @@ export default function Home() {
                       </div>
                     </div>
 
+                    <div className="space-y-3">
+                      <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">
+                        Categories
+                      </p>
+                      <p className="text-[11px] leading-relaxed text-slate-500">
+                        What spaces and content do you want to see? Pick everything that fits you.
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {SIGNUP_CATEGORY_OPTIONS.map((cat) => {
+                          const selected = interestCategories.includes(cat);
+                          return (
+                            <button
+                              key={cat}
+                              type="button"
+                              onClick={() => {
+                                setInterestCategories((prev) =>
+                                  selected
+                                    ? prev.filter((c) => c !== cat)
+                                    : [...prev, cat]
+                                );
+                              }}
+                              className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                                selected
+                                  ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-400/25"
+                                  : "border-slate-700 bg-slate-900/40 text-slate-400 hover:border-slate-500 hover:text-slate-300"
+                              }`}
+                            >
+                              {cat}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
                     {formError && (
                       <p className="text-xs font-medium text-rose-400">
                         {formError}
@@ -607,7 +668,7 @@ export default function Home() {
 
                     <button
                       type="submit"
-                      disabled={!avatarChoice}
+                      disabled={!avatarChoice || interestCategories.length === 0}
                       className="mt-1 inline-flex w-full items-center justify-center rounded-full bg-slate-700/80 px-6 py-3 text-sm font-semibold text-slate-100 shadow-[0_16px_40px_rgba(15,23,42,0.8)] transition hover:bg-slate-600/90 disabled:cursor-not-allowed disabled:bg-slate-800/80 disabled:text-slate-400"
                     >
                       Next
@@ -651,31 +712,60 @@ export default function Home() {
                               name,
                               username,
                               avatar: avatarChoice,
+                              interest_categories: interestCategories,
                             },
                           });
                           if (error) {
                             setFormError(error.message);
                             return;
                           }
+                          const { error: profileErr } = await supabase
+                            .from("profiles")
+                            .update({
+                              interest_categories: interestCategories,
+                              updated_at: new Date().toISOString(),
+                            })
+                            .eq("id", session.user.id);
+                          if (profileErr) {
+                            console.error("profiles.interest_categories:", profileErr);
+                          }
                         } else {
-                          const { error } = await supabase.auth.signUp({
-                            email,
-                            password: createPassword,
-                            options: {
-                              data: {
-                                name,
-                                username,
-                                avatar: avatarChoice,
+                          const { data: signUpData, error } =
+                            await supabase.auth.signUp({
+                              email,
+                              password: createPassword,
+                              options: {
+                                data: {
+                                  name,
+                                  username,
+                                  avatar: avatarChoice,
+                                  interest_categories: interestCategories,
+                                },
                               },
-                            },
-                          });
+                            });
                           if (error) {
                             setFormError(error.message);
                             return;
+                          }
+                          const signedInId = signUpData.session?.user?.id;
+                          if (signedInId) {
+                            const { error: profileErr } = await supabase
+                              .from("profiles")
+                              .update({
+                                interest_categories: interestCategories,
+                                updated_at: new Date().toISOString(),
+                              })
+                              .eq("id", signedInId);
+                            if (profileErr) {
+                              console.error("profiles.interest_categories:", profileErr);
+                            }
                           }
                         }
                         setShowCreateModal(false);
-                        window.location.href = "/feeds";
+                        const next = safeAppPathRedirect(
+                          new URLSearchParams(window.location.search).get("redirect")
+                        );
+                        window.location.href = next ?? "/feeds";
                       } finally {
                         setIsCompletingSignup(false);
                       }
@@ -800,7 +890,10 @@ export default function Home() {
                     }
                     setShowSignInModal(false);
                     setSignInPassword("");
-                    window.location.href = "/feeds";
+                    const next = safeAppPathRedirect(
+                      new URLSearchParams(window.location.search).get("redirect")
+                    );
+                    window.location.href = next ?? "/feeds";
                   } finally {
                     setIsSigningIn(false);
                   }
@@ -855,6 +948,7 @@ export default function Home() {
                     className="font-medium text-slate-50 hover:text-slate-200"
                     onClick={() => {
                       setShowSignInModal(false);
+                      setInterestCategories([]);
                       setShowCreateModal(true);
                     }}
                   >

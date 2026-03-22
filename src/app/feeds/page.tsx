@@ -5,16 +5,18 @@ import {
 } from "@/features/feeds/FeedsCurrentUser";
 import { FeedsPostList } from "@/features/feeds/FeedsPostList";
 import { FeedsRankingList } from "@/features/feeds/FeedsRankingList";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppPageHeader } from "@/components/shell/AppPageHeader";
 import { AppShell } from "@/components/shell/AppShell";
 import { HeaderAccountMenu } from "@/components/shell/HeaderAccountMenu";
 import { usePostComposer } from "@/features/feeds/PostComposerModal";
 import { useStoryViewer } from "@/features/feeds/StoryViewer";
 import { useFeedsPosts } from "@/features/feeds/FeedsPostsContext";
+import { CreateSpaceModal } from "@/features/spaces/CreateSpaceModal";
 import { useAuthSnapshot } from "@/lib/auth/AuthProvider";
 import { normalizeUserTag } from "@/lib/profilePath";
-import { shellMainColumn } from "@/lib/ui/appShellClasses";
+import type { FeedPost } from "@/features/feeds/feedsPostTypes";
+import { shellLaunchGradientClass, shellMainColumn } from "@/lib/ui/appShellClasses";
 
 const TABS = ["Feeds", "Ranking", "Community"] as const;
 type FeedTab = (typeof TABS)[number];
@@ -22,28 +24,12 @@ type FeedTab = (typeof TABS)[number];
 /** Story avatar shape: square with rounded corners */
 const STORY_AVATAR_SHAPE = "rounded-xl";
 
-const STORY_GRADS = [
-  "linear-gradient(90deg,#0f766e,#134e4a 35%,#22d3ee)", // teal → cyan (reference)
-  "linear-gradient(90deg,#be185d,#f472b6,#fb923c)",
-  "linear-gradient(90deg,#047857,#34d399,#22d3ee)",
-  "linear-gradient(90deg,#6d28d9,#a78bfa,#ec4899)",
-  "linear-gradient(90deg,#b45309,#fbbf24,#f97316)",
-  "linear-gradient(90deg,#0f7669,#2dd4bf,#3b82f6)",
-  "linear-gradient(90deg,#7c3aed,#c084fc,#f472b6)",
-  "linear-gradient(90deg,#0369a1,#38bdf8,#818cf8)",
-];
-
-function StoryDiamond({ className = "" }: { className?: string }) {
-  return (
-    <span
-      className={`inline-block h-2 w-2 shrink-0 rotate-45 bg-white shadow-sm ${className}`}
-      aria-hidden
-    />
-  );
-}
-
 export default function FeedsPage() {
   const [tab, setTab] = useState<FeedTab>("Feeds");
+  const [createSpaceOpen, setCreateSpaceOpen] = useState(false);
+  const storiesScrollRef = useRef<HTMLDivElement>(null);
+  const [storiesCanScrollLeft, setStoriesCanScrollLeft] = useState(false);
+  const [storiesCanScrollRight, setStoriesCanScrollRight] = useState(false);
   const { openStory } = usePostComposer();
   const { openViewer } = useStoryViewer();
   const { posts, postsLoading } = useFeedsPosts();
@@ -55,12 +41,67 @@ export default function FeedsPage() {
     return posts.filter((p) => p.surface === "Story" && p.authorTag === t);
   }, [posts, tag]);
 
+  /** Other people’s stories: one tile per author, feed order (newest-first in `posts`). */
+  const peerStoryGroups = useMemo(() => {
+    const me = normalizeUserTag(tag);
+    const storyPosts = posts.filter((p) => p.surface === "Story");
+    const byAuthor = new Map<string, FeedPost[]>();
+    for (const p of storyPosts) {
+      const t = normalizeUserTag(p.authorTag);
+      if (t === me) continue;
+      const list = byAuthor.get(t);
+      if (list) list.push(p);
+      else byAuthor.set(t, [p]);
+    }
+    const groups: { stories: FeedPost[] }[] = [];
+    const seen = new Set<string>();
+    for (const p of storyPosts) {
+      const t = normalizeUserTag(p.authorTag);
+      if (t === me || seen.has(t)) continue;
+      seen.add(t);
+      const list = byAuthor.get(t);
+      if (list?.length) groups.push({ stories: list });
+    }
+    return groups;
+  }, [posts, tag]);
+
   const onYourStoryClick = () => {
     if (myStories.length > 0) {
       openViewer(myStories, 0);
     } else {
       openStory();
     }
+  };
+
+  const updateStoriesScrollState = useCallback(() => {
+    const el = storiesScrollRef.current;
+    if (!el) return;
+    const { scrollLeft, scrollWidth, clientWidth } = el;
+    const max = scrollWidth - clientWidth;
+    const left = scrollLeft > 4;
+    const right = max > 4 && scrollLeft < max - 4;
+    // Defer: ResizeObserver can fire synchronously during observe(); avoid setState in that flush (React 19 / Next 16).
+    queueMicrotask(() => {
+      setStoriesCanScrollLeft(left);
+      setStoriesCanScrollRight(right);
+    });
+  }, []);
+
+  useEffect(() => {
+    updateStoriesScrollState();
+    const el = storiesScrollRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(updateStoriesScrollState);
+    ro.observe(el);
+    el.addEventListener("scroll", updateStoriesScrollState, { passive: true });
+    return () => {
+      ro.disconnect();
+      el.removeEventListener("scroll", updateStoriesScrollState);
+    };
+  }, [updateStoriesScrollState, tab, posts.length, peerStoryGroups.length]);
+
+  const scrollStoriesBy = (delta: number) => {
+    storiesScrollRef.current?.scrollBy({ left: delta, behavior: "smooth" });
   };
   const headerTitle = tab === "Feeds" ? "Feeds" : tab === "Ranking" ? "Ranking" : "Community";
   const headerSubtitle =
@@ -89,84 +130,173 @@ export default function FeedsPage() {
           <div className="min-w-0 flex-1 space-y-6 lg:space-y-8">
             {tab === "Feeds" && (
             <>
-            {/* Stories: squircle tiles (teal→cyan + diamond), scroll mobile */}
-            <section className="scrollbar-hide -mx-1 overflow-x-auto overflow-y-visible pb-3 pt-0.5 md:overflow-visible md:pb-2 md:pt-0">
-              <div className="flex w-max gap-3 px-1 sm:gap-4 md:w-full md:flex-wrap md:gap-5">
+            {/* Stories: single horizontal row; overflow shows left/right scroll controls */}
+            <div className="relative -mx-1 pb-3 pt-0.5 md:pb-2 md:pt-0">
+              {storiesCanScrollLeft && (
+                <div
+                  className="pointer-events-none absolute inset-y-0 left-0 z-[24] w-11 bg-gradient-to-r from-[#050505] via-[#050505]/88 to-transparent sm:w-12"
+                  aria-hidden
+                />
+              )}
+              {storiesCanScrollLeft && (
                 <button
                   type="button"
-                  aria-label="Add your story"
-                  onClick={onYourStoryClick}
-                  className="flex w-[72px] flex-col items-center gap-2.5 overflow-visible rounded-xl border-0 bg-transparent p-0 pb-0.5 text-left lg:w-[80px] lg:gap-3"
+                  aria-label="Scroll stories left"
+                  onClick={() =>
+                    scrollStoriesBy(
+                      -Math.min(280, storiesScrollRef.current?.clientWidth ?? 280) * 0.65
+                    )
+                  }
+                  className="absolute left-1 top-1/2 z-[30] flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-white/15 bg-[#0f1419]/95 text-lg text-white shadow-lg backdrop-blur-sm transition hover:bg-[#1a2332] hover:border-white/25 lg:h-10 lg:w-10"
                 >
-                  <div
-                    className={`relative flex h-[68px] w-[68px] items-center justify-center overflow-visible border-2 border-dashed border-white/20 bg-white/[0.03] p-[3px] transition hover:border-emerald-400/40 hover:bg-white/[0.06] lg:h-20 lg:w-20 ${STORY_AVATAR_SHAPE}`}
-                  >
-                    <div
-                      className={`relative h-full w-full overflow-hidden shadow-inner ring-1 ring-white/10 ${STORY_AVATAR_SHAPE}`}
-                    >
-                      {/* Current user avatar */}
-                      {avatarUrl ? (
-                        /* eslint-disable-next-line @next/next/no-img-element */
-                        <img
-                          src={avatarUrl}
-                          alt=""
-                          className="absolute inset-0 h-full w-full object-cover"
-                        />
-                      ) : (
-                        <div
-                          className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-teal-800 via-teal-700 to-cyan-400 text-2xl leading-none lg:text-3xl"
-                          aria-hidden
-                        >
-                          {avatarEmoji ? (
-                            <span className="scale-110">{avatarEmoji}</span>
-                          ) : (
-                            <span className="text-lg font-bold text-white/95 lg:text-xl">
-                              {storyInitial}
-                            </span>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                    {/* + on border — same surface as post comment buttons */}
-                    <span
-                      className="pointer-events-none absolute bottom-0 left-1/2 z-10 -translate-x-1/2 translate-y-[42%]"
-                      aria-hidden
-                    >
-                      <span className="flex h-5 w-5 items-center justify-center rounded-full border border-white/15 bg-white/10 text-[11px] font-light leading-none text-white shadow-md backdrop-blur-sm lg:h-6 lg:w-6 lg:text-xs">
-                        +
-                      </span>
-                    </span>
-                  </div>
-                  <span className="text-center text-[10px] font-medium text-slate-400 lg:text-xs">Your Story</span>
+                  ‹
                 </button>
-                {STORY_GRADS.map((grad, i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    aria-label={`Story ${i + 1}`}
-                    className="flex w-[68px] shrink-0 flex-col items-center gap-2 lg:w-20"
-                  >
-                    <div
-                      className={`flex h-[68px] w-[68px] items-center justify-center shadow-md ring-1 ring-white/15 lg:h-20 lg:w-20 ${STORY_AVATAR_SHAPE}`}
-                      style={{ backgroundImage: grad }}
+              )}
+              {storiesCanScrollRight && (
+                <div
+                  className="pointer-events-none absolute inset-y-0 right-0 z-[24] w-11 bg-gradient-to-l from-[#050505] via-[#050505]/88 to-transparent sm:w-12"
+                  aria-hidden
+                />
+              )}
+              {storiesCanScrollRight && (
+                <button
+                  type="button"
+                  aria-label="Scroll stories right"
+                  onClick={() =>
+                    scrollStoriesBy(
+                      Math.min(280, storiesScrollRef.current?.clientWidth ?? 280) * 0.65
+                    )
+                  }
+                  className="absolute right-1 top-1/2 z-[30] flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-white/15 bg-[#0f1419]/95 text-lg text-white shadow-lg backdrop-blur-sm transition hover:bg-[#1a2332] hover:border-white/25 lg:h-10 lg:w-10"
+                >
+                  ›
+                </button>
+              )}
+              <section
+                ref={storiesScrollRef}
+                className="relative z-0 scrollbar-hide overflow-x-auto overflow-y-visible px-1"
+              >
+                <div className="flex w-max flex-nowrap gap-3 sm:gap-4 md:gap-5">
+                <div className="flex w-[80px] flex-col items-center gap-2.5 overflow-visible pb-0.5 lg:w-[92px] lg:gap-3">
+                  <div className="relative h-[76px] w-[76px] lg:h-[88px] lg:w-[88px]">
+                    <button
+                      type="button"
+                      aria-label={
+                        myStories.length > 0 ? "View your story" : "Add your story"
+                      }
+                      onClick={onYourStoryClick}
+                      className={`relative flex h-full w-full items-center justify-center overflow-visible border-2 border-dashed border-white/20 bg-white/[0.03] p-[3px] transition hover:border-emerald-400/40 hover:bg-white/[0.06] ${STORY_AVATAR_SHAPE}`}
                     >
-                      <StoryDiamond className="h-2.5 w-2.5 lg:h-3 lg:w-3" />
-                    </div>
+                      <div
+                        className={`relative h-full w-full overflow-hidden shadow-inner ring-1 ring-white/10 ${STORY_AVATAR_SHAPE}`}
+                      >
+                        {/* Current user avatar */}
+                        {avatarUrl ? (
+                          /* eslint-disable-next-line @next/next/no-img-element */
+                          <img
+                            src={avatarUrl}
+                            alt=""
+                            className="absolute inset-0 h-full w-full object-cover"
+                          />
+                        ) : (
+                          <div
+                            className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-teal-800 via-teal-700 to-cyan-400 text-[1.65rem] leading-none lg:text-4xl"
+                            aria-hidden
+                          >
+                            {avatarEmoji ? (
+                              <span className="scale-110">{avatarEmoji}</span>
+                            ) : (
+                              <span className="text-xl font-bold text-white/95 lg:text-2xl">
+                                {storyInitial}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </button>
+                    {/* + always opens story composer, even when a story is already posted */}
+                    <button
+                      type="button"
+                      aria-label="Create new story"
+                      onClick={() => openStory()}
+                      className="absolute bottom-0 left-1/2 z-[1] flex h-5 w-5 -translate-x-1/2 translate-y-[42%] items-center justify-center rounded-full border border-white/15 bg-white/10 text-[11px] font-light leading-none text-white shadow-md backdrop-blur-sm transition hover:bg-white/15 sm:h-6 sm:w-6 lg:h-7 lg:w-7 lg:text-xs"
+                    >
+                      +
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={onYourStoryClick}
+                    className="border-0 bg-transparent p-0 text-center text-[10px] font-medium text-slate-400 hover:text-slate-300 lg:text-xs"
+                  >
+                    Your Story
                   </button>
-                ))}
-              </div>
-            </section>
+                </div>
+                {peerStoryGroups.map(({ stories }) => {
+                  const preview = stories[0];
+                  const shortLabel =
+                    preview.authorName?.trim().split(/\s+/)[0] ||
+                    preview.authorTag.replace(/^@/, "");
+                  return (
+                    <button
+                      key={normalizeUserTag(preview.authorTag)}
+                      type="button"
+                      aria-label={`${preview.authorName} story`}
+                      onClick={() => openViewer(stories, 0)}
+                      className="flex w-[76px] shrink-0 flex-col items-center gap-2 lg:w-[88px]"
+                    >
+                      <div
+                        className={`relative flex h-[76px] w-[76px] items-center justify-center overflow-hidden shadow-md ring-1 ring-white/15 lg:h-[88px] lg:w-[88px] ${STORY_AVATAR_SHAPE}`}
+                      >
+                        {preview.imageUrl ? (
+                          /* eslint-disable-next-line @next/next/no-img-element */
+                          <img
+                            src={preview.imageUrl}
+                            alt=""
+                            className="absolute inset-0 h-full w-full object-cover"
+                          />
+                        ) : preview.avatarUrl ? (
+                          /* eslint-disable-next-line @next/next/no-img-element */
+                          <img
+                            src={preview.avatarUrl}
+                            alt=""
+                            className="absolute inset-0 h-full w-full object-cover"
+                          />
+                        ) : (
+                          <div
+                            className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-slate-700 via-slate-800 to-slate-950 text-[1.35rem] leading-none lg:text-2xl"
+                            aria-hidden
+                          >
+                            {preview.avatarEmoji ? (
+                              <span>{preview.avatarEmoji}</span>
+                            ) : (
+                              <span className="text-lg font-bold text-white/90 lg:text-xl">
+                                {(preview.authorName || preview.authorTag).charAt(0).toUpperCase()}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      <span className="max-w-full truncate px-0.5 text-center text-[10px] font-medium text-slate-400 lg:text-xs">
+                        {shortLabel}
+                      </span>
+                    </button>
+                  );
+                })}
+                </div>
+              </section>
+            </div>
             </>
             )}
 
             {/* Tabs: wider, readable on desktop */}
-            <nav className="flex max-w-2xl items-center gap-1 rounded-2xl bg-white/[0.04] p-1.5 ring-1 ring-white/5 backdrop-blur-md lg:p-2">
+            <nav className="grid w-full max-w-3xl grid-cols-3 gap-1 rounded-2xl bg-white/[0.04] p-1.5 ring-1 ring-white/5 backdrop-blur-md lg:p-2">
               {TABS.map((t) => (
                 <button
                   key={t}
                   type="button"
                   onClick={() => setTab(t)}
-                  className={`flex flex-1 justify-center rounded-full py-2.5 text-center text-[11px] font-semibold sm:text-sm lg:py-3 lg:text-base transition ${
+                  className={`flex min-w-0 items-center justify-center rounded-full py-2.5 text-center text-[11px] font-semibold sm:text-sm lg:py-3 lg:text-base transition ${
                     tab === t
                       ? "bg-[#1e3a5f]/90 text-white shadow-[0_0_24px_rgba(56,189,248,0.12)] ring-1 ring-sky-500/30"
                       : "cursor-pointer text-slate-500 hover:bg-white/[0.06] hover:text-slate-300"
@@ -188,31 +318,36 @@ export default function FeedsPage() {
 
             {tab === "Feeds" && (
             <>
-            {/* Hero: stacked mobile, horizontal on lg */}
-            <section
-              className="relative overflow-hidden rounded-[24px] shadow-[0_24px_60px_rgba(0,0,0,0.45)] ring-1 ring-white/10 lg:rounded-[28px]"
-              style={{
-                background: "linear-gradient(125deg, #7c3aed 0%, #db2777 35%, #f97316 65%, #22c55e 100%)",
-              }}
-            >
-              <div className="pointer-events-none absolute inset-0 bg-black/10" />
+            {/* Hero: create space — matches app chrome (#0f1419, teal/sky accents) */}
+            <section className="relative overflow-hidden rounded-[24px] border border-white/10 bg-[#0f1419] shadow-[0_24px_60px_rgba(0,0,0,0.45)] ring-1 ring-white/[0.06] lg:rounded-[28px]">
+              <div
+                className="pointer-events-none absolute inset-0 bg-gradient-to-br from-teal-950/35 via-[#0f1419] to-sky-950/25"
+                aria-hidden
+              />
+              <div className="pointer-events-none absolute -right-16 -top-24 h-56 w-56 rounded-full bg-sky-500/10 blur-3xl" aria-hidden />
+              <div className="pointer-events-none absolute -bottom-20 -left-12 h-48 w-48 rounded-full bg-teal-500/10 blur-3xl" aria-hidden />
               <div className="relative flex flex-col gap-6 p-6 sm:p-8 lg:flex-row lg:items-center lg:justify-between lg:gap-10 lg:p-10">
                 <div className="relative mx-auto h-28 w-full max-w-[220px] shrink-0 lg:mx-0 lg:h-36 lg:w-48 lg:max-w-none">
-                  <div className="absolute left-0 top-0 h-14 w-14 rounded-full border-2 border-white/40 bg-gradient-to-br from-amber-200 to-orange-400 shadow-lg lg:h-16 lg:w-16" />
-                  <div className="absolute bottom-0 left-8 h-11 w-11 rounded-full border-2 border-white/40 bg-gradient-to-br from-pink-300 to-rose-500 shadow-lg lg:left-10 lg:h-14 lg:w-14" />
-                  <div className="absolute right-4 top-2 h-12 w-12 rounded-full border-2 border-white/40 bg-gradient-to-br from-sky-300 to-indigo-500 shadow-lg lg:right-6 lg:h-14 lg:w-14" />
-                  <div className="absolute bottom-1 right-0 h-16 w-16 rounded-full border-2 border-white/40 bg-gradient-to-br from-fuchsia-300 to-purple-600 shadow-lg lg:h-[4.5rem] lg:w-[4.5rem]" />
+                  <div className="absolute left-0 top-0 h-14 w-14 rounded-full border border-white/15 bg-gradient-to-br from-teal-600/90 to-cyan-700/80 shadow-lg ring-1 ring-white/10 lg:h-16 lg:w-16" />
+                  <div className="absolute bottom-0 left-8 h-11 w-11 rounded-full border border-white/15 bg-gradient-to-br from-sky-600/85 to-indigo-800/70 shadow-lg ring-1 ring-white/10 lg:left-10 lg:h-14 lg:w-14" />
+                  <div className="absolute right-4 top-2 h-12 w-12 rounded-full border border-white/15 bg-gradient-to-br from-emerald-700/80 to-teal-900/70 shadow-lg ring-1 ring-white/10 lg:right-6 lg:h-14 lg:w-14" />
+                  <div className="absolute bottom-1 right-0 h-16 w-16 rounded-full border border-white/15 bg-gradient-to-br from-slate-600/90 to-slate-900/80 shadow-lg ring-1 ring-white/10 lg:h-[4.5rem] lg:w-[4.5rem]" />
                 </div>
                 <div className="flex flex-1 flex-col items-center gap-4 text-center lg:items-start lg:text-left">
                   <div>
-                    <h2 className="text-2xl font-bold tracking-tight text-white drop-shadow-sm sm:text-3xl lg:text-4xl">VibeHive</h2>
-                    <p className="mt-1 text-sm font-medium text-white/90 lg:text-base">Community</p>
+                    <h2 className="text-2xl font-bold tracking-tight text-white sm:text-3xl lg:text-4xl">
+                      Create a space
+                    </h2>
+                    <p className="mt-1 max-w-md text-sm leading-relaxed text-slate-400 lg:text-base">
+                      Start a home for your crew—channels, updates, and vibes in one place on Jeanity.
+                    </p>
                   </div>
                   <button
                     type="button"
-                    className="rounded-2xl border border-white/20 bg-black/35 px-8 py-3 text-sm font-semibold text-white backdrop-blur-md transition hover:bg-black/45 lg:text-base"
+                    onClick={() => setCreateSpaceOpen(true)}
+                    className={`rounded-full px-8 py-3 text-sm font-bold text-slate-950 transition hover:brightness-110 lg:text-base ${shellLaunchGradientClass}`}
                   >
-                    Join now
+                    Create space
                   </button>
                 </div>
               </div>
@@ -283,6 +418,7 @@ export default function FeedsPage() {
         </div>
 
       </div>
+      <CreateSpaceModal open={createSpaceOpen} onClose={() => setCreateSpaceOpen(false)} />
     </AppShell>
   );
 }

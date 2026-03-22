@@ -91,9 +91,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setSnap({ ...snapshotFromUser(null), ready: true });
           return;
         }
+        if (!mounted.current) return;
         setSnap(snapshotFromUser(data.user ?? null));
       } catch {
-        if (mounted.current) setSnap({ ...snapshotFromUser(null), ready: true });
+        if (!mounted.current) return;
+        setSnap({ ...snapshotFromUser(null), ready: true });
       }
     });
   }, []);
