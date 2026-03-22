@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev --webpack",
     "dev:turbo": "next dev",
-    "build": "next build",
+    "build": "node scripts/check-public-env.mjs && next build",
     "start": "next start",
     "lint": "eslint",
     "fix:431": "node scripts/fix-431.mjs"
