@@ -53,10 +53,35 @@ textarea:focus {
   box-shadow: 0 0 0 2px rgba(248, 250, 252, 0.28);
 }
 
+/* Override global input focus for fields inside a chrome-only container (no focus ring/border) */
+textarea.input-focus-quiet:focus,
+textarea.input-focus-quiet:focus-visible {
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
 /* Links and buttons focus treatment */
 button,
 a {
   outline: none;
+}
+
+/* Actionable controls: hand cursor (preflight often resets button cursor) */
+button:not(:disabled):not([aria-disabled="true"]) {
+  cursor: pointer;
+}
+
+button:disabled,
+button[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
+a[href]:not([aria-disabled="true"]) {
+  cursor: pointer;
+}
+
+[role="button"]:not([aria-disabled="true"]) {
+  cursor: pointer;
 }
 
 button:focus-visible,

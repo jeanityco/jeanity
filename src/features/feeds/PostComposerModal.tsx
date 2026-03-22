@@ -46,7 +46,7 @@ export function usePostComposer() {
  * Renders the modal portal once.
  */
 export function PostComposerProvider({ children }: { children: ReactNode }) {
-  const { addPost } = useFeedsPosts();
+  const { addPost, addProduct } = useFeedsPosts();
   const { name, tag, avatarEmoji, avatarUrl, user } = useAuthSnapshot();
   const TABS: PostSurface[] = ["Post", "Story", "Launch"];
   const [open, setOpen] = useState(false);
@@ -63,6 +63,9 @@ export function PostComposerProvider({ children }: { children: ReactNode }) {
   const [launchLogoPreview, setLaunchLogoPreview] = useState<string | null>(null);
   const launchFileRef = useRef<File | null>(null);
   const launchInputRef = useRef<HTMLInputElement>(null);
+  /** Prevents double submit while async work runs (clicks would otherwise queue multiple posts). */
+  const postInFlightRef = useRef(false);
+  const [postSubmitting, setPostSubmitting] = useState(false);
 
   const openModal = useCallback((initialSurface: PostSurface = "Post") => {
     setSurface(initialSurface);
@@ -167,54 +170,57 @@ export function PostComposerProvider({ children }: { children: ReactNode }) {
           : text.trim().length > 0 || !!imagePreview;
 
   const submitPost = async () => {
-    if (!canPost) return;
-    const authorName = user ? name : "Guest";
-    const authorTag = tag.replace(/^@/, "") || "guest";
+    if (!canPost || postInFlightRef.current) return;
+    postInFlightRef.current = true;
+    setPostSubmitting(true);
+    try {
+      const authorName = user ? name : "Guest";
+      const authorTag = tag.replace(/^@/, "") || "guest";
 
-    if (surface === "Launch") {
-      let launchLogoDataUrl: string | null = null;
-      if (launchFileRef.current) {
+      if (surface === "Launch") {
+        let launchLogoDataUrl: string | null = null;
+        if (launchFileRef.current) {
+          try {
+            launchLogoDataUrl = await readFileAsDataUrl(launchFileRef.current);
+          } catch {
+            launchLogoDataUrl = launchLogoPreview;
+          }
+        }
+        await addProduct({
+          authorName,
+          authorTag,
+          name: launchName.trim(),
+          tagline: launchTagline.trim() || " ",
+          categories: [...launchCategories],
+          logoDataUrl: launchLogoDataUrl,
+        });
+        closeModal();
+        return;
+      }
+
+      let imageDataUrl: string | null = null;
+      if (fileRef.current) {
         try {
-          launchLogoDataUrl = await readFileAsDataUrl(launchFileRef.current);
+          imageDataUrl = await readFileAsDataUrl(fileRef.current);
         } catch {
-          launchLogoDataUrl = launchLogoPreview;
+          imageDataUrl = imagePreview;
         }
       }
+
       await addPost({
         authorName,
         authorTag,
         avatarUrl: null,
         avatarEmoji: avatarEmoji ?? null,
-        caption: launchTagline.trim() || " ",
-        imageDataUrl: null,
-        surface: "Launch",
-        launchName: launchName.trim(),
-        launchCategories: [...launchCategories],
-        launchLogoDataUrl,
+        caption: text.trim() || " ",
+        imageDataUrl,
+        surface,
       });
       closeModal();
-      return;
+    } finally {
+      postInFlightRef.current = false;
+      setPostSubmitting(false);
     }
-
-    let imageDataUrl: string | null = null;
-    if (fileRef.current) {
-      try {
-        imageDataUrl = await readFileAsDataUrl(fileRef.current);
-      } catch {
-        imageDataUrl = imagePreview;
-      }
-    }
-
-    await addPost({
-      authorName,
-      authorTag,
-      avatarUrl: null,
-      avatarEmoji: avatarEmoji ?? null,
-      caption: text.trim() || " ",
-      imageDataUrl,
-      surface,
-    });
-    closeModal();
   };
 
   const modal =
@@ -349,11 +355,11 @@ export function PostComposerProvider({ children }: { children: ReactNode }) {
               <div className="flex justify-end border-t border-sky-500/15 pt-4">
                 <button
                   type="button"
-                  disabled={!canPost}
+                  disabled={!canPost || postSubmitting}
                   onClick={() => void submitPost()}
                   className="rounded-full bg-gradient-to-r from-emerald-400 via-sky-400 to-indigo-400 px-8 py-2.5 text-sm font-bold text-slate-950 shadow-[0_12px_28px_rgba(56,189,248,0.35)] transition hover:enabled:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  Launch
+                  {postSubmitting ? "Launching…" : "Launch"}
                 </button>
               </div>
             </div>
@@ -498,11 +504,11 @@ export function PostComposerProvider({ children }: { children: ReactNode }) {
                 )}
                 <button
                   type="button"
-                  disabled={!canPost}
+                  disabled={!canPost || postSubmitting}
                   onClick={() => void submitPost()}
                   className="rounded-full bg-gradient-to-r from-emerald-400 via-sky-400 to-indigo-400 px-6 py-2 text-sm font-bold text-slate-950 shadow-[0_12px_28px_rgba(56,189,248,0.35)] transition hover:enabled:brightness-110 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:bg-none disabled:from-transparent disabled:via-transparent disabled:to-transparent disabled:text-slate-500 disabled:shadow-none"
                 >
-                  Post
+                  {postSubmitting ? "Posting…" : "Post"}
                 </button>
               </div>
             </div>

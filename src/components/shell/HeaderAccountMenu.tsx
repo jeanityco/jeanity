@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { useAuthSnapshot } from "@/lib/auth/AuthProvider";
 
 function MenuIconCircle({ children }: { children: React.ReactNode }) {
   return (
@@ -20,6 +21,8 @@ function ChevronRight() {
 }
 
 export function HeaderAccountMenu() {
+  const { avatarUrl, avatarEmoji, name, ready } = useAuthSnapshot();
+  const initial = ready ? (name.trim().charAt(0) || "?").toUpperCase() : "…";
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -60,14 +63,29 @@ export function HeaderAccountMenu() {
         aria-haspopup="true"
         aria-label="Account menu"
         onClick={() => setOpen((v) => !v)}
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-400 to-fuchsia-500 ring-2 ring-white/15 shadow-lg shadow-violet-500/20 transition hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-sky-400/50 sm:h-10 sm:w-10 lg:h-11 lg:w-11"
-      />
+        className="relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl ring-2 ring-white/15 shadow-lg transition hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-sky-400/50 active:scale-[0.98] md:h-11 md:w-11"
+      >
+        {avatarUrl ? (
+          /* eslint-disable-next-line @next/next/no-img-element */
+          <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
+        ) : (
+          <span className="flex h-full w-full items-center justify-center bg-gradient-to-br from-violet-400 to-fuchsia-500 text-white shadow-violet-500/20">
+            {avatarEmoji ? (
+              <span className="text-xl leading-none md:text-2xl" aria-hidden>
+                {avatarEmoji}
+              </span>
+            ) : (
+              <span className="text-sm font-bold md:text-base">{initial}</span>
+            )}
+          </span>
+        )}
+      </button>
 
       {open && (
         <>
           <div className="fixed inset-0 z-40 sm:hidden" aria-hidden onClick={() => setOpen(false)} />
           <div
-            className="absolute right-0 top-full z-50 mt-2 w-[min(calc(100vw-2rem),300px)] min-w-[260px] overflow-hidden rounded-xl border border-emerald-500/20 bg-[#080c14] py-2 shadow-xl shadow-emerald-900/20 ring-1 ring-sky-500/10"
+            className="absolute right-0 top-full z-50 mt-2 w-[min(calc(100vw-1.5rem),300px)] max-w-[calc(100vw-1.5rem)] min-w-0 overflow-hidden rounded-xl border border-emerald-500/20 bg-[#080c14] py-2 shadow-xl shadow-emerald-900/20 ring-1 ring-sky-500/10 sm:min-w-[260px]"
             style={{
               backgroundImage:
                 "linear-gradient(165deg, rgba(6,78,59,0.35) 0%, #080c14 45%, rgba(12,74,110,0.2) 100%)",
