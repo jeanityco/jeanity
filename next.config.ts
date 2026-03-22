@@ -1,22 +1,22 @@
 import type { NextConfig } from "next";
 
 /**
- * Vercel / Supabase templates sometimes use SUPABASE_URL + SUPABASE_ANON_KEY
- * without the NEXT_PUBLIC_ prefix. Next only inlines NEXT_PUBLIC_* into the
- * browser bundle, so we map the common names here at build time.
- * Never put SUPABASE_SERVICE_ROLE_KEY here.
+ * Map Supabase env into NEXT_PUBLIC_* for the browser. Vercel Marketplace uses
+ * *_PUBLISHABLE_KEY; older setups use *_ANON_KEY. Never map SERVICE_ROLE here.
  */
 const supabaseUrl =
   process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() || process.env.SUPABASE_URL?.trim() || "";
-const supabaseAnonKey =
+const supabasePublicApiKey =
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim() ||
+  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim() ||
   process.env.SUPABASE_ANON_KEY?.trim() ||
+  process.env.SUPABASE_PUBLISHABLE_KEY?.trim() ||
   "";
 
 const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_SUPABASE_URL: supabaseUrl,
-    NEXT_PUBLIC_SUPABASE_ANON_KEY: supabaseAnonKey,
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: supabasePublicApiKey,
   },
   // Strict Mode double-mounts every client component in dev → many parallel
   // Supabase getUser/getSession calls → GoTrue storage lock warnings + AbortError.
