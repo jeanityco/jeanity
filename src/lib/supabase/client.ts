@@ -1,4 +1,5 @@
 import { createBrowserClient } from "@supabase/ssr";
+import { getSupabasePublicEnv } from "@/lib/supabase/publicEnv";
 
 /**
  * Single browser client for the whole app. Stored on globalThis so HMR does not
@@ -25,11 +26,8 @@ const browserClientOptions =
 
 export function getSupabaseBrowserClient() {
   if (!globalForSupabase.__jeanitySupabaseClient) {
-    globalForSupabase.__jeanitySupabaseClient = createBrowserClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      browserClientOptions
-    );
+    const { url, anonKey } = getSupabasePublicEnv();
+    globalForSupabase.__jeanitySupabaseClient = createBrowserClient(url, anonKey, browserClientOptions);
   }
   return globalForSupabase.__jeanitySupabaseClient;
 }
