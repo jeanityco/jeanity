@@ -1,6 +1,23 @@
 import type { NextConfig } from "next";
 
+/**
+ * Vercel / Supabase templates sometimes use SUPABASE_URL + SUPABASE_ANON_KEY
+ * without the NEXT_PUBLIC_ prefix. Next only inlines NEXT_PUBLIC_* into the
+ * browser bundle, so we map the common names here at build time.
+ * Never put SUPABASE_SERVICE_ROLE_KEY here.
+ */
+const supabaseUrl =
+  process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() || process.env.SUPABASE_URL?.trim() || "";
+const supabaseAnonKey =
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim() ||
+  process.env.SUPABASE_ANON_KEY?.trim() ||
+  "";
+
 const nextConfig: NextConfig = {
+  env: {
+    NEXT_PUBLIC_SUPABASE_URL: supabaseUrl,
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: supabaseAnonKey,
+  },
   // Strict Mode double-mounts every client component in dev → many parallel
   // Supabase getUser/getSession calls → GoTrue storage lock warnings + AbortError.
   reactStrictMode: false,

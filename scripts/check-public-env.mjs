@@ -38,28 +38,26 @@ if (!process.env.SKIP_PUBLIC_ENV_CHECK) {
   applyEnvFile(".env.local");
 }
 
-const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
-const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
+const url =
+  process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() || process.env.SUPABASE_URL?.trim();
+const anonKey =
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim() ||
+  process.env.SUPABASE_ANON_KEY?.trim();
 
 if (!url || !anonKey) {
   console.error("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
   console.error("  BUILD BLOCKED: Missing Supabase environment variables");
   console.error("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
   console.error("");
-  console.error("  Required (exact names):");
-  console.error("    NEXT_PUBLIC_SUPABASE_URL");
-  console.error("    NEXT_PUBLIC_SUPABASE_ANON_KEY");
+  console.error("  Add either pair (Vercel → Settings → Environment Variables):");
+  console.error("    NEXT_PUBLIC_SUPABASE_URL + NEXT_PUBLIC_SUPABASE_ANON_KEY");
+  console.error("  OR (common Supabase/Vercel template names):");
+  console.error("    SUPABASE_URL + SUPABASE_ANON_KEY");
   console.error("");
-  console.error("  Vercel:");
-  console.error("    1. Project → Settings → Environment Variables");
-  console.error("    2. Add BOTH variables");
-  console.error('    3. Enable "Production" (and Preview if you use preview deploys)');
-  console.error("    4. Save, then Deployments → … → Redeploy (new build required)");
+  console.error('  Enable "Production" (and Preview if needed), save, then redeploy.');
   console.error("");
-  console.error("  Supabase: Dashboard → Project Settings → API");
-  console.error("    URL = Project URL   |   Key = anon public (legacy) / publishable key");
-  console.error("");
-  console.error("  Local: copy .env.example → .env.local and fill values");
+  console.error("  Supabase: Project Settings → API → Project URL + anon public key");
+  console.error("  Do not use the service_role key in the app.");
   console.error("");
   process.exit(1);
 }
