@@ -13,11 +13,14 @@ const supabasePublicApiKey =
   process.env.SUPABASE_PUBLISHABLE_KEY?.trim() ||
   "";
 
+const publicEnv: Record<string, string> = {};
+// Only inject when present. Injecting empty strings bakes "missing env" into the
+// client bundle and can mask correct runtime configuration.
+if (supabaseUrl) publicEnv.NEXT_PUBLIC_SUPABASE_URL = supabaseUrl;
+if (supabasePublicApiKey) publicEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY = supabasePublicApiKey;
+
 const nextConfig: NextConfig = {
-  env: {
-    NEXT_PUBLIC_SUPABASE_URL: supabaseUrl,
-    NEXT_PUBLIC_SUPABASE_ANON_KEY: supabasePublicApiKey,
-  },
+  ...(Object.keys(publicEnv).length ? { env: publicEnv } : {}),
   // Strict Mode double-mounts every client component in dev → many parallel
   // Supabase getUser/getSession calls → GoTrue storage lock warnings + AbortError.
   reactStrictMode: false,
