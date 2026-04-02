@@ -1,4 +1,4 @@
-import type { DbFeedPost, FeedPost, PostSurface } from "./feedsPostTypes";
+import type { DbFeedPost, FeedPost, PostSurface } from "./feedPostTypes";
 
 export function timeLabelFrom(createdAt: string): string {
   const d = new Date(createdAt);
@@ -34,6 +34,7 @@ export const FEED_POST_SELECT = FEED_POST_SELECT_WITH_COMMENTS;
 export function feedPostFromDbRow(r: DbFeedPost): FeedPost {
   return {
     id: r.id,
+    userId: (r as { user_id?: string | null }).user_id ?? null,
     authorName: r.author_name,
     authorTag: r.author_tag.startsWith("@") ? r.author_tag : `@${r.author_tag}`,
     avatarUrl: r.avatar_url,
@@ -43,6 +44,8 @@ export function feedPostFromDbRow(r: DbFeedPost): FeedPost {
     likes: r.likes_count ?? 0,
     comments: r.comments_count ?? 0,
     timeLabel: timeLabelFrom(r.created_at),
+    createdAt: r.created_at,
+    postTags: r.post_tags ?? [],
     surface: (r.surface as PostSurface) || undefined,
     launchName: r.launch_name ?? undefined,
     launchCategories: r.launch_categories ?? undefined,

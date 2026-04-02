@@ -11,7 +11,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { useFeedsPosts } from "@/features/feeds/FeedsPostsContext";
-import type { PostSurface } from "@/features/feeds/feedsPostTypes";
+import type { PostSurface } from "@/features/feeds/feedPostTypes";
 import { useAuthSnapshot } from "@/lib/auth/AuthProvider";
 import { readFileAsDataUrl } from "@/lib/readFileAsDataUrl";
 

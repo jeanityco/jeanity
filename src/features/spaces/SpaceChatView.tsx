@@ -108,7 +108,6 @@ export function SpaceChatView({
 } = {}) {
   const { user, name: userName, ready } = useAuthSnapshot();
   const [activeChannelId, setActiveChannelId] = useState("general");
-  const [mobilePanel, setMobilePanel] = useState<"list" | "chat">("list");
   const [channels, setChannels] = useState<{ id: string; name: string; description?: string }[]>(FALLBACK_CHANNELS);
   const [messages, setMessages] = useState<ChatRow[]>([]);
   const [messageInput, setMessageInput] = useState("");
@@ -148,12 +147,16 @@ export function SpaceChatView({
 
   useEffect(() => {
     if (!space?.id || !user?.id) {
-      setSpaceRoster([]);
-      setRosterLoading(false);
+      queueMicrotask(() => {
+        setSpaceRoster([]);
+        setRosterLoading(false);
+      });
       return;
     }
     let cancelled = false;
-    setRosterLoading(true);
+    queueMicrotask(() => {
+      if (!cancelled) setRosterLoading(true);
+    });
     const supabase = getSupabaseBrowserClient();
     void (async () => {
       const { data: memberRows, error } = await supabase
@@ -430,68 +433,17 @@ export function SpaceChatView({
   };
 
 
-  const openChannel = (id: string) => {
-    setActiveChannelId(id);
-    setMobilePanel("chat");
-  };
-
   return (
-    <AppShell active={navActive}>
+    <AppShell
+      active={navActive}
+      mainClassName="h-dvh max-h-dvh overflow-hidden bg-[#0a0e1a] text-white antialiased md:flex md:flex-row md:min-h-0"
+    >
       <div className={shellSpaceColumn}>
         {/* Desktop: full-height 3 columns inside */}
         <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-          {/* —— Spaces rail + channels (Jeanity UI) —— */}
-          <div
-            className={`flex min-h-0 w-full shrink-0 overflow-hidden border-r border-white/5 bg-[#080c14] lg:w-[min(100%,280px)] lg:max-w-[280px] lg:min-w-0 ${
-              mobilePanel === "chat" ? "hidden lg:flex" : "flex"
-            }`}
-          >
-            <aside className="scrollbar-hide flex min-h-0 min-w-0 w-full flex-1 flex-col bg-[#0a0e1a]/95 backdrop-blur-sm">
-              <div className="scrollbar-hide flex-1 space-y-0.5 overflow-y-auto px-2 pb-4 pt-3">
-                <div className="mb-1">
-                  <p className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                    General
-                  </p>
-                  <div className="space-y-0.5">
-                    {channels.map((ch) => (
-                      <button
-                        key={ch.id}
-                        type="button"
-                        onClick={() => openChannel(ch.id)}
-                        className={`flex w-full items-center gap-2 rounded-xl px-2 py-2 text-left text-[15px] transition ${
-                          activeChannelId === ch.id
-                            ? "bg-white/10 font-medium text-white ring-1 ring-white/10"
-                            : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
-                        }`}
-                      >
-                        <span
-                          className="h-2 w-2 shrink-0 rounded-full bg-sky-400"
-                          aria-hidden
-                        />
-                        <span className="truncate">{ch.name}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </aside>
-          </div>
-
           {/* —— Chat (Jeanity) —— */}
-          <section
-            className={`flex min-h-0 min-w-0 flex-1 flex-col border-r border-white/5 bg-[#0a0e1a] ${
-              mobilePanel === "list" ? "hidden lg:flex" : "flex"
-            }`}
-          >
+          <section className="flex min-h-0 min-w-0 flex-1 flex-col border-r border-white/5 bg-[#0a0e1a]">
             <header className="z-10 flex min-h-12 shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-white/5 bg-[#0a0e1a]/90 px-4 py-2 backdrop-blur-xl">
-              <button
-                type="button"
-                className="rounded-lg p-1.5 text-slate-400 hover:bg-white/5 hover:text-white lg:hidden"
-                aria-label="Back"
-                onClick={() => setMobilePanel("list")}
-              >
-                ←
-              </button>
               <span className="h-2 w-2 shrink-0 rounded-full bg-sky-400" aria-hidden />
               <h2 className="truncate text-base font-semibold text-white">{activeChannel}</h2>
               <span className="hidden h-1 w-1 shrink-0 rounded-full bg-slate-600 sm:block" aria-hidden />
@@ -782,6 +734,13 @@ export function SpaceChatView({
                 className="block rounded-xl border border-emerald-500/25 py-2.5 text-center text-sm font-medium text-emerald-300 hover:bg-emerald-500/10"
               >
                 Back to Feeds
+              </Link>
+              <Link
+                href="/feeds"
+                prefetch={false}
+                className="block rounded-xl border border-sky-500/25 py-2.5 text-center text-sm font-medium text-sky-300 hover:bg-sky-500/10"
+              >
+                Discover trending now
               </Link>
             </div>
           </aside>

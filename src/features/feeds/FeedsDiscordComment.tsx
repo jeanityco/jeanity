@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import type { PostComment } from "@/features/feeds/feedsPostTypes";
+import type { PostComment } from "@/features/feeds/feedPostTypes";
 import { publicProfilePath } from "@/lib/profilePath";
 
 function avatarLetter(name: string) {

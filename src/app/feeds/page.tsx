@@ -4,8 +4,14 @@ import {
   FeedsCurrentUserHeader,
 } from "@/features/feeds/FeedsCurrentUser";
 import { FeedsPostList } from "@/features/feeds/FeedsPostList";
-import { FeedsRankingList } from "@/features/feeds/FeedsRankingList";
+import {
+  FeedsRankingList,
+  RankingProductRow,
+  RANKING_PERIODS,
+  type RankingPeriod,
+} from "@/features/feeds/FeedsRankingList";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { AppPageHeader } from "@/components/shell/AppPageHeader";
 import { AppShell } from "@/components/shell/AppShell";
 import { HeaderAccountMenu } from "@/components/shell/HeaderAccountMenu";
@@ -15,13 +21,22 @@ import { useFeedsPosts } from "@/features/feeds/FeedsPostsContext";
 import { CreateSpaceModal } from "@/features/spaces/CreateSpaceModal";
 import { useAuthSnapshot } from "@/lib/auth/AuthProvider";
 import { normalizeUserTag } from "@/lib/profilePath";
-import type { FeedPost } from "@/features/feeds/feedsPostTypes";
+import type { FeedPost } from "@/features/feeds/feedPostTypes";
 import { shellLaunchGradientClass, shellMainColumn } from "@/lib/ui/appShellClasses";
+import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
-const TABS = ["Feeds", "Ranking", "Community"] as const;
+type PublicSpace = {
+  id: string;
+  code: string;
+  name: string;
+  icon_url: string | null;
+  created_at?: string | null;
+};
+
+const TABS = ["Feeds", "Ranking", "Spaces"] as const;
 type FeedTab = (typeof TABS)[number];
 
-/** Story avatar shape: square with rounded corners */
+/** Story avatar shape: square with rounded corners. */
 const STORY_AVATAR_SHAPE = "rounded-xl";
 
 export default function FeedsPage() {
@@ -30,9 +45,14 @@ export default function FeedsPage() {
   const storiesScrollRef = useRef<HTMLDivElement>(null);
   const [storiesCanScrollLeft, setStoriesCanScrollLeft] = useState(false);
   const [storiesCanScrollRight, setStoriesCanScrollRight] = useState(false);
+  const [publicSpaces, setPublicSpaces] = useState<PublicSpace[]>([]);
+  const [publicSpacesLoading, setPublicSpacesLoading] = useState(false);
+  const [railSpaces, setRailSpaces] = useState<PublicSpace[]>([]);
+  const [rankingPeriod, setRankingPeriod] = useState<RankingPeriod>("Daily");
   const { openStory } = usePostComposer();
   const { openViewer } = useStoryViewer();
-  const { posts, postsLoading } = useFeedsPosts();
+  const { posts, postsLoading, products, upvoteProduct } = useFeedsPosts();
+  const [railUpvotingIds, setRailUpvotingIds] = useState<Set<string>>(new Set());
   const { name, tag, avatarUrl, avatarEmoji, ready } = useAuthSnapshot();
   const storyInitial = ready ? name.charAt(0).toUpperCase() || "?" : "…";
 
@@ -65,6 +85,29 @@ export default function FeedsPage() {
     return groups;
   }, [posts, tag]);
 
+  const rightRailTopRanking = useMemo(() => {
+    return [...products]
+      .sort((a, b) => {
+        const scoreA = 1.0 * a.upvotes + 1.8 * a.comments;
+        const scoreB = 1.0 * b.upvotes + 1.8 * b.comments;
+        if (scoreB !== scoreA) return scoreB - scoreA;
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      })
+      .slice(0, 3);
+  }, [products]);
+
+  const onRailUpvote = (productId: string) => {
+    if (railUpvotingIds.has(productId)) return;
+    setRailUpvotingIds((prev) => new Set(prev).add(productId));
+    void upvoteProduct(productId).finally(() => {
+      setRailUpvotingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(productId);
+        return next;
+      });
+    });
+  };
+
   const onYourStoryClick = () => {
     if (myStories.length > 0) {
       openViewer(myStories, 0);
@@ -88,6 +131,68 @@ export default function FeedsPage() {
   }, []);
 
   useEffect(() => {
+    if (tab !== "Spaces") return;
+    const supabase = getSupabaseBrowserClient();
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) setPublicSpacesLoading(true);
+    });
+
+    // Handle older/newer schemas gracefully (missing is_public/created_at causes 400).
+    void (async () => {
+      const primary = await supabase
+        .from("spaces")
+        .select("id, code, name, icon_url, created_at")
+        .eq("is_public", true)
+        .order("created_at", { ascending: false })
+        .limit(24);
+
+      if (!primary.error) {
+        if (!cancelled) {
+          setPublicSpaces((primary.data ?? []) as PublicSpace[]);
+          setPublicSpacesLoading(false);
+        }
+        return;
+      }
+
+      const fallback = await supabase
+        .from("spaces")
+        .select("id, code, name, icon_url")
+        .order("name", { ascending: true })
+        .limit(24);
+
+      if (!cancelled) {
+        setPublicSpaces((fallback.data ?? []) as PublicSpace[]);
+        setPublicSpacesLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [tab]);
+
+  useEffect(() => {
+    if (tab !== "Feeds") return;
+    const supabase = getSupabaseBrowserClient();
+    let cancelled = false;
+    void (async () => {
+      const { data } = await supabase
+        .from("spaces")
+        .select("id, code, name, icon_url, created_at")
+        .eq("is_public", true)
+        .order("created_at", { ascending: false })
+        .limit(3);
+      if (!cancelled) {
+        setRailSpaces((data ?? []) as PublicSpace[]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [tab]);
+
+  useEffect(() => {
     updateStoriesScrollState();
     const el = storiesScrollRef.current;
     if (!el) return;
@@ -103,10 +208,10 @@ export default function FeedsPage() {
   const scrollStoriesBy = (delta: number) => {
     storiesScrollRef.current?.scrollBy({ left: delta, behavior: "smooth" });
   };
-  const headerTitle = tab === "Feeds" ? "Feeds" : tab === "Ranking" ? "Ranking" : "Community";
+  const headerTitle = tab === "Feeds" ? "Feeds" : tab === "Ranking" ? "Ranking" : "Spaces";
   const headerSubtitle =
     tab === "Feeds"
-      ? "Stories, communities, and what's trending"
+      ? "Discover, react, follow, and go deeper"
       : tab === "Ranking"
         ? "Top tools and creators on Jeanity"
         : "Spaces and people you can join";
@@ -126,8 +231,8 @@ export default function FeedsPage() {
         />
 
         {/* Content grid: main + optional right rail on xl */}
-        <div className="mx-auto flex w-full max-w-6xl gap-6 px-3 py-4 sm:gap-8 sm:px-6 sm:py-5 md:px-8 md:py-6 xl:gap-10">
-          <div className="min-w-0 flex-1 space-y-6 lg:space-y-8">
+        <div className="mx-auto flex w-full max-w-7xl gap-6 px-3 py-4 sm:gap-8 sm:px-6 sm:py-5 md:px-8 md:py-6 xl:gap-10 xl:pr-[22rem]">
+          <div className="min-w-0 flex-[1.45] space-y-6 lg:space-y-8">
             {tab === "Feeds" && (
             <>
             {/* Stories: single horizontal row; overflow shows left/right scroll controls */}
@@ -289,14 +394,14 @@ export default function FeedsPage() {
             </>
             )}
 
-            {/* Tabs: wider, readable on desktop */}
-            <nav className="grid w-full max-w-3xl grid-cols-3 gap-1 rounded-2xl bg-white/[0.04] p-1.5 ring-1 ring-white/5 backdrop-blur-md lg:p-2">
+            {/* Tabs: equal-width and wider on desktop */}
+            <nav className="grid w-full max-w-4xl grid-cols-3 gap-1.5 rounded-2xl bg-white/[0.04] p-2 ring-1 ring-white/5 backdrop-blur-md lg:p-2.5">
               {TABS.map((t) => (
                 <button
                   key={t}
                   type="button"
                   onClick={() => setTab(t)}
-                  className={`flex min-w-0 items-center justify-center rounded-full py-2.5 text-center text-[11px] font-semibold sm:text-sm lg:py-3 lg:text-base transition ${
+                  className={`flex h-12 w-full min-w-0 items-center justify-center rounded-full px-5 text-center text-sm font-semibold transition lg:h-14 lg:text-base ${
                     tab === t
                       ? "bg-[#1e3a5f]/90 text-white shadow-[0_0_24px_rgba(56,189,248,0.12)] ring-1 ring-sky-500/30"
                       : "cursor-pointer text-slate-500 hover:bg-white/[0.06] hover:text-slate-300"
@@ -307,12 +412,79 @@ export default function FeedsPage() {
               ))}
             </nav>
 
-            {tab === "Ranking" && <FeedsRankingList />}
+            {tab === "Ranking" && <FeedsRankingList period={rankingPeriod} />}
 
-            {tab === "Community" && (
-              <section className="rounded-2xl border border-white/5 bg-white/[0.03] p-8 text-center ring-1 ring-white/5">
-                <h2 className="text-lg font-semibold text-white">Community</h2>
-                <p className="mt-2 text-sm text-slate-500">Browse spaces and members—coming soon.</p>
+            {tab === "Spaces" && (
+              <section className="space-y-4">
+                <div className="rounded-2xl border border-white/5 bg-white/[0.03] p-5 ring-1 ring-white/5">
+                  <h2 className="text-lg font-semibold text-white">Public spaces</h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Join active public spaces across Jeanity.
+                  </p>
+                </div>
+                {publicSpacesLoading ? (
+                  <div className="rounded-2xl border border-white/5 bg-white/[0.03] p-8 text-center ring-1 ring-white/5">
+                    <p className="text-sm text-slate-500">Loading spaces…</p>
+                  </div>
+                ) : publicSpaces.length === 0 ? (
+                  <div className="rounded-2xl border border-white/5 bg-white/[0.03] p-8 text-center ring-1 ring-white/5">
+                    <p className="text-sm text-slate-500">No public spaces yet.</p>
+                  </div>
+                ) : (
+                  <ul className="grid gap-3 sm:grid-cols-2">
+                    {publicSpaces.map((space) => (
+                      <li key={space.id}>
+                        <article className="relative overflow-hidden rounded-2xl border border-amber-400/30 bg-[#0f1419] ring-1 ring-white/[0.08]">
+                          {space.icon_url ? (
+                            <>
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={space.icon_url} alt="" className="absolute inset-0 h-full w-full object-cover" />
+                              <div className="absolute inset-0 bg-black/45" />
+                            </>
+                          ) : (
+                            <>
+                              <div className="absolute inset-0 bg-[linear-gradient(145deg,#1b2f4a_0%,#193a39_46%,#132131_100%)]" />
+                              <div className="absolute inset-0 bg-black/35" />
+                            </>
+                          )}
+
+                          <div className="relative p-4 sm:p-5">
+                            <div className="flex items-start gap-3">
+                              <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/20 bg-black/30 ring-1 ring-white/15">
+                                {space.icon_url ? (
+                                  /* eslint-disable-next-line @next/next/no-img-element */
+                                  <img src={space.icon_url} alt="" className="h-full w-full object-cover" />
+                                ) : (
+                                  <span className="text-sm font-bold text-white">
+                                    {space.name.charAt(0).toUpperCase() || "S"}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="truncate text-[1.35rem] font-bold tracking-tight text-white">{space.name}</p>
+                                <p className="text-sm text-white/75">/{space.code}</p>
+                              </div>
+                            </div>
+
+                            <p className="mt-4 line-clamp-2 text-base leading-relaxed text-white/90">
+                              Welcome to {space.name}. Join the conversation, updates, and creator vibes on Jeanity.
+                            </p>
+
+                            <div className="mt-5 flex items-center justify-end gap-2">
+                              <Link
+                                href={`/invite/${space.code}`}
+                                prefetch={false}
+                                className="rounded-2xl border border-white/15 bg-white/20 px-4 py-2 text-lg font-semibold text-white backdrop-blur-sm transition hover:bg-white/30"
+                              >
+                                Join
+                              </Link>
+                            </div>
+                          </div>
+                        </article>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </section>
             )}
 
@@ -353,22 +525,6 @@ export default function FeedsPage() {
               </div>
             </section>
 
-            {/* Trending + Discover intro */}
-            <div className="grid gap-4 sm:grid-cols-2 lg:gap-6">
-              <section className="rounded-2xl border border-white/5 bg-white/[0.03] p-5 backdrop-blur-sm lg:p-6">
-                <p className="text-sm font-medium text-slate-300 lg:text-base">Trending on Jeanity</p>
-                <p className="mt-2 text-xs leading-relaxed text-slate-500 lg:text-sm">
-                  Your feed will fill with vibes from people and spaces you follow.
-                </p>
-              </section>
-              <section className="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] p-5 lg:p-6">
-                <p className="text-sm font-medium text-slate-400 lg:text-base">Discover</p>
-                <p className="mt-2 text-xs text-slate-600 lg:text-sm">
-                  Groups and trending tags—scroll for posts from the community.
-                </p>
-              </section>
-            </div>
-
             {/* Posts (under Discover row) */}
             {postsLoading ? (
               <div className="space-y-5 lg:space-y-6" aria-busy="true" aria-label="Loading posts">
@@ -397,22 +553,133 @@ export default function FeedsPage() {
           </div>
 
           {/* Right rail: xl only — scrollable so it isn’t clipped above the fold */}
-          <aside className="hidden w-72 min-w-0 shrink-0 self-start xl:block">
-            <div className="sticky top-20 z-[5] max-h-[calc(100dvh-5.5rem)] space-y-4 overflow-y-auto overscroll-y-contain rounded-2xl border border-white/5 bg-white/[0.03] p-5 pb-6 backdrop-blur-sm">
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">For you</p>
-              <p className="text-sm leading-relaxed text-slate-400">
-                Suggestions and activity will appear here.
-              </p>
-              <div className="space-y-2 pt-1">
-                {["#welcome", "#feeds", "#community"].map((tag) => (
-                  <div
-                    key={tag}
-                    className="rounded-xl bg-white/5 px-3 py-2.5 text-xs text-slate-400 ring-1 ring-white/5"
-                  >
-                    {tag}
+          <aside className="hidden w-80 min-w-0 shrink-0 self-start xl:fixed xl:right-6 xl:top-24 xl:block">
+            <div className="space-y-3">
+              {tab === "Ranking" ? (
+                <div className="rounded-2xl border border-white/5 bg-white/[0.03] p-5 pb-6 backdrop-blur-sm">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                    Ranking window
+                  </p>
+                  <p className="text-sm leading-relaxed text-slate-400">
+                    Choose the time range for top products.
+                  </p>
+                  <div className="grid grid-cols-3 gap-1 rounded-xl border border-white/10 bg-[#0f1419] p-1">
+                    {RANKING_PERIODS.map((p) => (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => setRankingPeriod(p)}
+                        className={`rounded-lg px-3 py-2 text-xs font-semibold transition ${
+                          rankingPeriod === p
+                            ? "bg-[#1e3a5f]/90 text-white ring-1 ring-sky-500/35"
+                            : "text-slate-400 hover:bg-white/[0.06] hover:text-slate-200"
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    ))}
                   </div>
-                ))}
-              </div>
+                </div>
+              ) : (
+                <>
+                  <div className="rounded-2xl border border-white/5 bg-white/[0.03] p-4 backdrop-blur-sm">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">For you</p>
+                  <p className="text-sm leading-relaxed text-slate-400">
+                    Suggestions and activity will appear here.
+                  </p>
+                  <div className="space-y-2 pt-1">
+                    {["#welcome", "#feeds", "#community"].map((tag) => (
+                      <div
+                        key={tag}
+                        className="rounded-xl bg-white/5 px-3 py-2.5 text-xs text-slate-400 ring-1 ring-white/5"
+                      >
+                        {tag}
+                      </div>
+                    ))}
+                  </div>
+                  </div>
+                  <div className="rounded-2xl border border-white/5 bg-white/[0.03] p-4 backdrop-blur-sm">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                      Trending
+                    </p>
+                    {rightRailTopRanking.length === 0 ? (
+                      <p className="mt-2 text-sm text-slate-500">No rankings yet.</p>
+                    ) : (
+                      <ul className="mt-2 space-y-2">
+                        {rightRailTopRanking.map((item, idx) => (
+                          <RankingProductRow
+                            key={item.id}
+                            product={item}
+                            rank={idx + 1}
+                            period={rankingPeriod}
+                            onUpvote={onRailUpvote}
+                            pending={railUpvotingIds.has(item.id)}
+                            showUpvoteIcon={false}
+                            upvoteInteractive={false}
+                            compact
+                          />
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                  <div className="rounded-2xl border border-white/5 bg-white/[0.03] p-4 backdrop-blur-sm">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                      Spaces to join
+                    </p>
+                    {railSpaces.length === 0 ? (
+                      <p className="mt-2 text-sm text-slate-500">No spaces yet.</p>
+                    ) : (
+                      <ul className="mt-2 space-y-2">
+                        {railSpaces.map((space) => (
+                          <li key={space.id}>
+                            <article className="relative overflow-hidden rounded-xl border border-amber-400/30 bg-[#0f1419] ring-1 ring-white/[0.08]">
+                              {space.icon_url ? (
+                                <>
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img src={space.icon_url} alt="" className="absolute inset-0 h-full w-full object-cover" />
+                                  <div className="absolute inset-0 bg-black/45" />
+                                </>
+                              ) : (
+                                <>
+                                  <div className="absolute inset-0 bg-[linear-gradient(145deg,#1b2f4a_0%,#193a39_46%,#132131_100%)]" />
+                                  <div className="absolute inset-0 bg-black/35" />
+                                </>
+                              )}
+                              <div className="relative p-3">
+                                <div className="flex items-start gap-3">
+                                  <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-white/20 bg-black/30 ring-1 ring-white/15">
+                                    {space.icon_url ? (
+                                      // eslint-disable-next-line @next/next/no-img-element
+                                      <img src={space.icon_url} alt="" className="h-full w-full object-cover" />
+                                    ) : (
+                                      <span className="text-sm font-bold text-white">
+                                        {space.name.charAt(0).toUpperCase() || "S"}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <p className="truncate text-base font-bold tracking-tight text-white">{space.name}</p>
+                                    <p className="text-xs text-white/75">/{space.code}</p>
+                                  </div>
+                                </div>
+                                <div className="mt-3 flex items-center justify-end">
+                                  <Link
+                                    href={`/invite/${space.code}`}
+                                    prefetch={false}
+                                    className="rounded-xl border border-white/15 bg-white/20 px-3 py-1.5 text-sm font-semibold text-white backdrop-blur-sm transition hover:bg-white/30"
+                                  >
+                                    Join
+                                  </Link>
+                                </div>
+                              </div>
+                            </article>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           </aside>
         </div>

@@ -3,6 +3,11 @@
 import { useMemo } from "react";
 import { FeedsPostCard } from "@/features/feeds/FeedsPostCard";
 import { useFeedsPosts } from "@/features/feeds/FeedsPostsContext";
+import { FeedsTrendingPreview } from "@/features/feeds/FeedsTrendingPreview";
+import { FeedsSpacesPreview } from "@/features/feeds/FeedsSpacesPreview";
+import { FEED_LAYOUT } from "@/features/feeds/feedUi";
+
+const DEMO_SHOW_ALL_BLOCKS_NOW = true;
 
 /** Feed stream is `feed_posts` only; products live in `product` and appear under Ranking. */
 export function FeedsPostList() {
@@ -14,10 +19,32 @@ export function FeedsPostList() {
   );
 
   return (
-    <div className="space-y-5 lg:space-y-6">
-      {feedPosts.map((post, idx) => (
-        <FeedsPostCard key={post.id} post={post} postIndex={idx + 1} mode="feed" />
-      ))}
+    <div className={`${FEED_LAYOUT.postGapClass}`}>
+      {DEMO_SHOW_ALL_BLOCKS_NOW && (
+        <>
+          <div className={FEED_LAYOUT.blockGapClass}>
+            <FeedsTrendingPreview limit={5} />
+          </div>
+          <div className={FEED_LAYOUT.blockGapClass}>
+            <FeedsSpacesPreview />
+          </div>
+        </>
+      )}
+      {feedPosts.map((post, idx) => {
+        const showTrending =
+          !DEMO_SHOW_ALL_BLOCKS_NOW && idx > 0 && idx % 5 === 0;
+        const showSpaces =
+          !DEMO_SHOW_ALL_BLOCKS_NOW && idx > 0 && idx % 8 === 0;
+        return (
+          <div key={post.id}>
+            {(showTrending || showSpaces) && <div className={FEED_LAYOUT.blockGapClass} />}
+            {showTrending && <FeedsTrendingPreview limit={5} />}
+            {showSpaces && <FeedsSpacesPreview />}
+            {(showTrending || showSpaces) && <div className={FEED_LAYOUT.blockGapClass} />}
+            <FeedsPostCard post={post} postIndex={idx + 1} mode="feed" />
+          </div>
+        );
+      })}
       {feedRankingActive && feedHasMore && (
         <div className="flex justify-center pt-2">
           <button

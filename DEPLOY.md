@@ -5,9 +5,12 @@
 - GitHub (or GitLab / Bitbucket) repo connected to [Vercel](https://vercel.com).
 - A [Supabase](https://supabase.com) project with your database and `supabase/schema.sql` applied (SQL Editor → run the file).
 
-## 1. Environment variables (required)
+## 1. Environment variables (required for a working site)
 
-The app **will not build** on Vercel until Supabase credentials are available at **build time**.
+`npm run build` on Vercel **does not** require Supabase env (so the compile step can succeed).  
+The **live app** needs Supabase credentials or pages that use auth/data will error in the browser.
+
+Run **`npm run verify-env`** locally before pushing if you want the same checks Vercel used to run (fails when URL/key are missing).
 
 In **Vercel → your project → Settings → Environment Variables**, add **both**:
 
@@ -30,7 +33,7 @@ Where to copy values: **Supabase Dashboard → Project Settings → API** (Proje
 - Enable **Production** (and **Preview** if you use preview URLs) for each variable.
 - After saving variables, trigger a **new deployment** (Redeploy). Changing env alone does not rebuild old deployments.
 
-**Optional skip (not recommended):** set `SKIP_PUBLIC_ENV_CHECK=1` only to debug; the live app will still need real Supabase env to work.
+**Optional:** `SKIP_PUBLIC_ENV_CHECK=1` is only read by `npm run verify-env` (not by `next build`).
 
 ## 2. Connect the repo
 
@@ -59,13 +62,22 @@ npm run build
 npm start
 ```
 
-`npm run build` runs a small check (`scripts/check-public-env.mjs`) that mirrors what Vercel needs.
+Optional: run `npm run verify-env` then `npm run build` to confirm Supabase env is present locally.
+
+## 5b. Predeploy checklist (recommended)
+
+- Run `npm run verify:release` and fix any failures before pushing.
+- Re-run `supabase/schema.sql` in Supabase SQL Editor after DB changes.
+- Confirm `increment_product_upvotes` and `get_ranked_feed_posts` exist in Supabase (SQL editor quick check) if feed/ranking changes were made.
+- Confirm Vercel env vars are set for the target environment (Production, and Preview if used).
+- Redeploy after changing environment variables.
 
 ## 6. Troubleshooting
 
 | Symptom | What to check |
 |--------|----------------|
-| Build fails: “BUILD BLOCKED: Missing Supabase…” | Vars missing or wrong environment scope (Production unchecked). |
+| `npm run verify-env` fails | Vars missing locally; fix `.env.local` or export env before running it. |
+| Site loads but Supabase errors in the console | Vercel env not set for Production, or redeploy needed after adding vars. |
 | Site loads but errors about Supabase in the browser | Old deployment: redeploy after setting `NEXT_PUBLIC_*`. Hard-refresh or incognito. |
 | Auth / storage 403 | RLS policies and Storage buckets from `schema.sql` not applied in Supabase. |
 

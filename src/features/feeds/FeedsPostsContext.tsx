@@ -23,9 +23,10 @@ import type {
   FeedProduct,
   PostComment,
   PostSurface,
-} from "@/features/feeds/feedsPostTypes";
+} from "@/features/feeds/feedPostTypes";
 import { PRODUCT_SELECT, productFromDbRow } from "@/features/feeds/productFromDb";
 import { fetchRankedFeedPage, type FeedRankCursor } from "@/lib/feed/rankedFeed";
+import { rankFallbackFeed } from "@/lib/feed/fallbackFeedRanking";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useAuthSnapshot } from "@/lib/auth/AuthProvider";
 
@@ -83,6 +84,7 @@ type Ctx = {
   feedLoadingMore: boolean;
   loadMorePosts: () => Promise<void>;
   bumpPostLikeCount: (postId: string, delta: number) => void;
+  upvoteProduct: (productId: string) => Promise<void>;
   getPost: (id: string) => FeedPost | undefined;
   getProduct: (id: string) => FeedProduct | undefined;
   getComments: (postId: string) => PostComment[];
@@ -196,7 +198,41 @@ export function FeedsPostsProvider({ children }: { children: ReactNode }) {
       if (!postsRes.error && postsRes.data) {
         const rows = postsRes.data as DbFeedPost[];
         const postRows = rows.filter((r) => r.surface !== "Launch");
-        setPosts(dedupePostsById(postRows.map((r) => feedPostFromDbRow(r))));
+        const fallbackPosts = dedupePostsById(postRows.map((r) => feedPostFromDbRow(r)));
+        const followsSet = new Set<string>();
+        const interestsSet = new Set<string>();
+        if (user?.id) {
+          const [{ data: follows }, { data: me }] = await Promise.all([
+            supabase
+              .from("follows")
+              .select("following_id")
+              .eq("follower_id", user.id),
+            supabase
+              .from("profiles")
+              .select("interest_categories")
+              .eq("id", user.id)
+              .maybeSingle(),
+          ]);
+          const followingIds = ((follows ?? []) as { following_id: string }[]).map((row) => row.following_id);
+          if (followingIds.length > 0) {
+            const { data: followedProfiles } = await supabase
+              .from("profiles")
+              .select("username")
+              .in("id", followingIds);
+            for (const row of (followedProfiles ?? []) as { username?: string | null }[]) {
+              const username = row.username;
+              if (username) followsSet.add(username.replace(/^@/, "").toLowerCase());
+            }
+          }
+          const interestCategories =
+            ((me as { interest_categories?: string[] | null } | null)?.interest_categories ?? []);
+          for (const item of interestCategories) interestsSet.add(item.toLowerCase());
+        }
+        setPosts(rankFallbackFeed({
+          posts: fallbackPosts,
+          followedAuthorTags: followsSet,
+          interestTags: interestsSet,
+        }));
       } else if (postsRes.error && process.env.NODE_ENV === "development") {
         console.warn("[feeds] feed_posts load failed:", postsRes.error.message);
       }
@@ -217,7 +253,53 @@ export function FeedsPostsProvider({ children }: { children: ReactNode }) {
 
   const bumpPostLikeCount = useCallback((postId: string, delta: number) => {
     setPosts((prev) =>
-      prev.map((p) => (p.id === postId ? { ...p, likes: Math.max(0, p.likes + delta) } : p))
+      prev.map((p) => (p.id === postId ? { ...p, likes: p.likes + delta } : p))
+    );
+  }, []);
+
+  const upvoteProduct = useCallback(async (productId: string) => {
+    let previousUpvotes: number | null = null;
+    setProducts((prev) =>
+      prev.map((p) => {
+        if (p.id !== productId) return p;
+        previousUpvotes = p.upvotes;
+        return { ...p, upvotes: p.upvotes + 1 };
+      })
+    );
+
+    const supabase = getSupabaseBrowserClient();
+    const {
+      data: { user: authedUser },
+    } = await supabase.auth.getUser();
+
+    // Keep behavior explicit: only signed-in users can persist votes.
+    if (!authedUser) {
+      if (previousUpvotes !== null) {
+        setProducts((prev) =>
+          prev.map((p) => (p.id === productId ? { ...p, upvotes: previousUpvotes as number } : p))
+        );
+      }
+      return;
+    }
+
+    const { data: nextUpvotes, error: rpcErr } = await supabase.rpc("increment_product_upvotes", {
+      p_product_id: productId,
+    });
+
+    if (rpcErr || typeof nextUpvotes !== "number") {
+      if (previousUpvotes !== null) {
+        setProducts((prev) =>
+          prev.map((p) => (p.id === productId ? { ...p, upvotes: previousUpvotes as number } : p))
+        );
+      }
+      if (process.env.NODE_ENV === "development" && rpcErr) {
+        console.warn("[feeds] increment_product_upvotes failed:", rpcErr.message);
+      }
+      return;
+    }
+
+    setProducts((prev) =>
+      prev.map((p) => (p.id === productId ? { ...p, upvotes: nextUpvotes } : p))
     );
   }, []);
 
@@ -303,7 +385,7 @@ export function FeedsPostsProvider({ children }: { children: ReactNode }) {
     const userIds = [
       ...new Set(rows.map((r) => r.user_id).filter((id): id is string => Boolean(id))),
     ];
-    let avatarByUserId: Record<string, string | null> = {};
+    const avatarByUserId: Record<string, string | null> = {};
     if (userIds.length > 0) {
       const { data: profs } = await supabase
         .from("profiles")
@@ -347,7 +429,7 @@ export function FeedsPostsProvider({ children }: { children: ReactNode }) {
     const userIds = [
       ...new Set(rows.map((r) => r.user_id).filter((id): id is string => Boolean(id))),
     ];
-    let avatarByUserId: Record<string, string | null> = {};
+    const avatarByUserId: Record<string, string | null> = {};
     if (userIds.length > 0) {
       const { data: profs } = await supabase
         .from("profiles")
@@ -411,7 +493,9 @@ export function FeedsPostsProvider({ children }: { children: ReactNode }) {
         .single();
 
       if (error || !data) {
-        pushLocal();
+        if (process.env.NODE_ENV === "development" && error) {
+          console.warn("[feeds] addComment failed:", error.message);
+        }
         return;
       }
 
@@ -463,7 +547,9 @@ export function FeedsPostsProvider({ children }: { children: ReactNode }) {
         .single();
 
       if (error || !data) {
-        pushLocal();
+        if (process.env.NODE_ENV === "development" && error) {
+          console.warn("[feeds] addProductComment failed:", error.message);
+        }
         return;
       }
 
@@ -523,6 +609,7 @@ export function FeedsPostsProvider({ children }: { children: ReactNode }) {
 
       const row: FeedPost = {
         id: crypto.randomUUID(),
+        userId: user?.id ?? null,
         authorName: p.authorName,
         authorTag,
         avatarUrl: p.avatarUrl,
@@ -532,6 +619,8 @@ export function FeedsPostsProvider({ children }: { children: ReactNode }) {
         likes: 0,
         comments: 0,
         timeLabel: "Posted · Just now",
+        createdAt: new Date().toISOString(),
+        postTags: [],
         surface: p.surface,
       };
       setPosts((prev) => dedupePostsById([row, ...prev]));
@@ -615,6 +704,7 @@ export function FeedsPostsProvider({ children }: { children: ReactNode }) {
       feedLoadingMore,
       loadMorePosts,
       bumpPostLikeCount,
+      upvoteProduct,
       addPost,
       addProduct,
       getPost,
@@ -635,6 +725,7 @@ export function FeedsPostsProvider({ children }: { children: ReactNode }) {
       feedLoadingMore,
       loadMorePosts,
       bumpPostLikeCount,
+      upvoteProduct,
       addPost,
       addProduct,
       getPost,

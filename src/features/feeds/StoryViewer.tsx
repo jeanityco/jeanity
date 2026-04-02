@@ -13,7 +13,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
-import type { FeedPost } from "@/features/feeds/feedsPostTypes";
+import type { FeedPost } from "@/features/feeds/feedPostTypes";
 import { normalizeUserTag, publicProfilePath } from "@/lib/profilePath";
 
 type StoryViewerState = {
@@ -108,8 +108,10 @@ function StoryViewerModal({
   }, [paused]);
 
   useLayoutEffect(() => {
-    setSegmentProgress(0);
-    setPaused(false);
+    queueMicrotask(() => {
+      setSegmentProgress(0);
+      setPaused(false);
+    });
   }, [index]);
 
   useEffect(() => {

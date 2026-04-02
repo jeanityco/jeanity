@@ -1,6 +1,21 @@
 @import "tailwindcss";
 
-/* Global base styles for Jeanity landing */
+/* Global base styles */
+
+:root {
+  --bg-app: #070b14;
+  --bg-elev-1: #0f141f;
+  --bg-elev-2: #141b29;
+  --border-soft: rgba(255, 255, 255, 0.1);
+  --text-main: #f8fafc;
+  --text-muted: #94a3b8;
+  --focus-ring: rgba(125, 211, 252, 0.35);
+  --shadow-soft: 0 16px 40px rgba(2, 6, 23, 0.35);
+  --feed-max-width: 640px;
+  --feed-pad-x: 16px;
+  --feed-gap-post: 12px;
+  --feed-gap-block: 18px;
+}
 
 html,
 body {
@@ -14,8 +29,9 @@ html {
 }
 
 body {
-  background-color: #050505;
-  color: #f9fafb;
+  background-color: var(--bg-app);
+  color: var(--text-main);
+  text-rendering: optimizeLegibility;
 }
 
 /* Landing hero — stacked cards */
@@ -49,8 +65,8 @@ textarea {
 input:focus,
 select:focus,
 textarea:focus {
-  border-color: #ffffff !important;
-  box-shadow: 0 0 0 2px rgba(248, 250, 252, 0.28);
+  border-color: #cbd5e1 !important;
+  box-shadow: 0 0 0 2px var(--focus-ring);
 }
 
 /* Override global input focus for fields inside a chrome-only container (no focus ring/border) */
@@ -86,8 +102,38 @@ a[href]:not([aria-disabled="true"]) {
 
 button:focus-visible,
 a:focus-visible {
-  box-shadow: 0 0 0 2px rgba(248, 250, 252, 0.35);
-  border-radius: 9999px;
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+/* Shared visual polish helpers */
+.surface-card {
+  border: 1px solid var(--border-soft);
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--bg-elev-1) 94%, white 6%),
+    var(--bg-elev-1)
+  );
+  box-shadow: var(--shadow-soft);
+}
+
+.surface-muted {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: color-mix(in oklab, var(--bg-elev-1) 90%, white 10%);
+}
+
+.hairline-divider {
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.ui-transition {
+  transition: all 180ms ease;
+}
+
+.feed-preview-surface {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.025);
+  box-shadow: 0 8px 24px rgba(2, 6, 23, 0.18);
 }
 
 .scrollbar-hide {

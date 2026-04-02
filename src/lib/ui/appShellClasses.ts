@@ -18,11 +18,11 @@ const bottomMobile = "pb-[calc(7rem+env(safe-area-inset-bottom,0px))]";
 
 /** Feeds, Search, Post detail (standard top padding). */
 export const shellMainColumn =
-  `relative z-10 flex min-h-0 min-w-0 w-full max-w-[100vw] flex-1 flex-col pt-3 sm:pt-4 ${bottomMobile} md:min-h-screen md:pb-8 md:pt-0`;
+  `relative z-10 flex min-h-0 min-w-0 w-full max-w-[100vw] flex-1 flex-col pt-3 sm:pt-4 ${bottomMobile} md:min-h-screen md:pb-10 md:pt-0`;
 
 /** Profile: no extra top padding (hero banner is first). */
 export const shellProfileColumn =
-  `relative z-10 flex min-h-0 min-w-0 w-full max-w-[100vw] flex-1 flex-col ${bottomMobile} md:min-h-screen md:pb-8`;
+  `relative z-10 flex min-h-0 min-w-0 w-full max-w-[100vw] flex-1 flex-col ${bottomMobile} md:min-h-screen md:pb-10`;
 
 /** Settings (scrolls inside; keep bottom clearance for mobile nav). */
 export const shellSettingsColumn =
@@ -34,4 +34,4 @@ export const shellSpaceColumn =
 
 /** Centered empty states (e.g. post not found). */
 export const shellEmptyColumn =
-  `relative z-10 flex min-h-0 min-w-0 w-full max-w-[100vw] flex-1 flex-col items-center justify-center px-4 py-12 text-center ${bottomMobile} md:py-8 md:pb-8`;
+  `relative z-10 flex min-h-0 min-w-0 w-full max-w-[100vw] flex-1 flex-col items-center justify-center px-4 py-12 text-center ${bottomMobile} md:py-10 md:pb-10`;

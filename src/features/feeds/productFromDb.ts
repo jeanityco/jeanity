@@ -1,5 +1,5 @@
 import { timeLabelFrom } from "@/features/feeds/feedPostFromDb";
-import type { DbProduct, FeedPost, FeedProduct } from "@/features/feeds/feedsPostTypes";
+import type { DbProduct, FeedPost, FeedProduct } from "@/features/feeds/feedPostTypes";
 
 export const PRODUCT_SELECT =
   "id, user_id, author_name, author_tag, name, tagline, categories, logo_url, upvotes, comments_count, created_at, updated_at";

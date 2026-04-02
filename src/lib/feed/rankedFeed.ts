@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { DbFeedPost, FeedPost } from "@/features/feeds/feedsPostTypes";
+import type { DbFeedPost, FeedPost } from "@/features/feeds/feedPostTypes";
 import { feedPostFromDbRow } from "@/features/feeds/feedPostFromDb";
 
 /**

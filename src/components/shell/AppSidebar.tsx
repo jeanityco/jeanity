@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   AppSidebarPostButton,
   MobileProfileLink,
@@ -9,7 +10,7 @@ import { AppSidebarSpacesList } from "@/components/shell/AppSidebarSpacesList";
 import { AppSidebarWebsitesButton } from "@/components/shell/AppSidebarWebsitesButton";
 import { shellRailOnLaunchClass, shellRailTileClass } from "@/lib/ui/appShellClasses";
 
-export type AppNavActive = "feeds" | "search" | "profile";
+export type AppNavActive = "feeds" | "search" | "profile" | "settings";
 
 function RailDivider() {
   return <div className="h-0.5 w-10 shrink-0 rounded-full bg-white/10" aria-hidden />;
@@ -51,12 +52,25 @@ function SquareLink({
 }
 
 export function AppSidebar({ active }: { active: AppNavActive }) {
+  const pathname = usePathname();
+  const isFeedsRoute = pathname === "/feeds" || pathname.startsWith("/feeds/");
+  const isSearchRoute = pathname === "/search" || pathname.startsWith("/search/");
+  const isSettingsRoute = pathname === "/settings" || pathname.startsWith("/settings/");
+  const isProfileRoute = pathname.startsWith("/u/");
+
+  // Only show the "active" ring when we're on that section's route.
+  // This avoids double-highlighting (e.g. in a Space route `/<code>`).
+  const feedsActive = active === "feeds" && isFeedsRoute;
+  const searchActive = active === "search" && isSearchRoute;
+  const settingsActive = active === "settings" && isSettingsRoute;
+  const profileActive = active === "profile" && isProfileRoute;
+
   return (
-    <aside className="relative z-20 hidden w-[100px] shrink-0 flex-col border-r border-white/5 bg-[#080c14] px-2 md:sticky md:top-0 md:flex md:min-h-dvh md:min-h-[100svh] md:self-stretch">
+    <aside className="relative z-20 hidden w-[100px] shrink-0 flex-col border-r border-white/5 bg-[#080c14] px-2 md:fixed md:inset-y-0 md:left-0 md:flex md:min-h-dvh md:min-h-[100svh] md:self-stretch">
       <nav className="scrollbar-hide flex min-h-0 flex-1 flex-col items-center gap-3 overflow-y-auto py-4">
         <SquareLink
           href="/feeds"
-          active={active === "feeds"}
+          active={feedsActive}
           label="Feeds"
           className={`${shellRailTileClass} text-lg font-bold ${shellRailOnLaunchClass}`}
         >
@@ -65,7 +79,7 @@ export function AppSidebar({ active }: { active: AppNavActive }) {
 
         <SquareLink
           href="/search"
-          active={active === "search"}
+          active={searchActive}
           label="Search"
           className={shellRailTileClass}
         >
@@ -74,16 +88,15 @@ export function AppSidebar({ active }: { active: AppNavActive }) {
           </svg>
         </SquareLink>
 
-        <SidebarProfileLink active={active === "profile"} />
+        <SidebarProfileLink active={profileActive} />
 
         <AppSidebarPostButton />
 
-        <Link
+        <SquareLink
           href="/settings"
-          prefetch={false}
-          aria-label="Settings"
-          title="Settings"
-          className={`flex h-16 w-16 shrink-0 items-center justify-center rounded-3xl ${shellRailTileClass}`}
+          active={settingsActive}
+          label="Settings"
+          className={shellRailTileClass}
         >
           <svg className={`h-7 w-7 ${shellRailOnLaunchClass}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path
@@ -93,7 +106,7 @@ export function AppSidebar({ active }: { active: AppNavActive }) {
             />
             <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
           </svg>
-        </Link>
+        </SquareLink>
 
         <AppSidebarWebsitesButton />
 
@@ -112,7 +125,7 @@ export function AppBackground() {
       className="pointer-events-none fixed inset-0 opacity-40"
       style={{
         background:
-          "radial-gradient(ellipse 80% 50% at 50% -20%, rgba(99,102,241,0.25), transparent), radial-gradient(ellipse 60% 40% at 100% 50%, rgba(236,72,153,0.12), transparent), radial-gradient(ellipse 50% 30% at 0% 80%, rgba(56,189,248,0.1), transparent)",
+          "radial-gradient(ellipse 80% 50% at 50% -20%, rgba(56,189,248,0.22), transparent), radial-gradient(ellipse 60% 40% at 100% 50%, rgba(16,185,129,0.1), transparent), radial-gradient(ellipse 50% 30% at 0% 80%, rgba(99,102,241,0.1), transparent)",
       }}
     />
   );

@@ -8,7 +8,7 @@
 -- Project Settings → API → reload schema if `rpc/get_ranked_feed_posts` 404s.
 --
 -- Contents:  Storage · Profiles · Follows · Feed (+ likes, ranking RPC) · Product
---            · Channels · Spaces · Space members · Messages · Reactions · Legacy patches
+--            · Channels · Spaces · Space members · Messages · Reactions · Compatibility
 -- =============================================================================
 
 
@@ -20,6 +20,7 @@ insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_typ
 values
   ('avatars', 'avatars', true, 524288, array['image/jpeg', 'image/png', 'image/webp', 'image/gif']),
   ('space_icons', 'space_icons', true, 1048576, array['image/jpeg', 'image/png', 'image/webp', 'image/gif']),
+  ('space_backgrounds', 'space_backgrounds', true, 2097152, array['image/jpeg', 'image/png', 'image/webp', 'image/gif']),
   ('post_images', 'post_images', true, 2097152, array['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
 on conflict (id) do update set
   public = excluded.public,
@@ -49,6 +50,10 @@ drop policy if exists "Space icons are publicly readable" on storage.objects;
 drop policy if exists "Users can upload space icons" on storage.objects;
 drop policy if exists "Users can update own space icons" on storage.objects;
 drop policy if exists "Users can delete own space icons" on storage.objects;
+drop policy if exists "Space backgrounds are publicly readable" on storage.objects;
+drop policy if exists "Users can upload space backgrounds" on storage.objects;
+drop policy if exists "Users can update own space backgrounds" on storage.objects;
+drop policy if exists "Users can delete own space backgrounds" on storage.objects;
 drop policy if exists "Post images are publicly readable" on storage.objects;
 drop policy if exists "Users can upload post images" on storage.objects;
 drop policy if exists "Users can update own post images" on storage.objects;
@@ -65,6 +70,18 @@ create policy "Users can update own space icons"
 create policy "Users can delete own space icons"
   on storage.objects for delete to authenticated
   using (bucket_id = 'space_icons' and (storage.foldername(name))[1] = auth.uid()::text);
+create policy "Space backgrounds are publicly readable"
+  on storage.objects for select to public using (bucket_id = 'space_backgrounds');
+create policy "Users can upload space backgrounds"
+  on storage.objects for insert to authenticated
+  with check (bucket_id = 'space_backgrounds' and (storage.foldername(name))[1] = auth.uid()::text);
+create policy "Users can update own space backgrounds"
+  on storage.objects for update to authenticated
+  using (bucket_id = 'space_backgrounds' and (storage.foldername(name))[1] = auth.uid()::text)
+  with check (bucket_id = 'space_backgrounds' and (storage.foldername(name))[1] = auth.uid()::text);
+create policy "Users can delete own space backgrounds"
+  on storage.objects for delete to authenticated
+  using (bucket_id = 'space_backgrounds' and (storage.foldername(name))[1] = auth.uid()::text);
 create policy "Post images are publicly readable"
   on storage.objects for select to public using (bucket_id = 'post_images');
 create policy "Users can upload post images"
@@ -279,8 +296,6 @@ begin
   return null;
 end;
 $$;
-drop trigger if exists feed_post_comments_count_ins on public.feed_post_comments;
-drop trigger if exists feed_post_comments_count_del on public.feed_post_comments;
 drop trigger if exists feed_post_comments_count on public.feed_post_comments;
 create trigger feed_post_comments_count
   after insert or delete on public.feed_post_comments
@@ -302,7 +317,7 @@ drop policy if exists "Authenticated users can create feed posts" on public.feed
 create policy "Authenticated users can create feed posts"
   on public.feed_posts for insert to authenticated with check (auth.uid() = user_id);
 
--- Likes (counter on row), optional post tags for relevance, editorial featured flag
+-- Votes (net score on row), optional post tags for relevance, editorial featured flag
 alter table public.feed_posts add column if not exists likes_count int not null default 0;
 alter table public.feed_posts add column if not exists post_tags text[] not null default '{}'::text[];
 alter table public.feed_posts add column if not exists is_featured boolean not null default false;
@@ -327,32 +342,125 @@ drop policy if exists "Users can unlike posts" on public.feed_post_likes;
 create policy "Users can unlike posts"
   on public.feed_post_likes for delete to authenticated using (auth.uid() = user_id);
 
-create or replace function public.bump_feed_post_likes_count()
+-- Canonical counter source is `feed_post_votes` (net score). Keep this legacy
+-- table readable, but do not mutate feed_posts.likes_count from it.
+drop trigger if exists feed_post_likes_count_ins on public.feed_post_likes;
+drop trigger if exists feed_post_likes_count_del on public.feed_post_likes;
+
+-- Canonical web voting model: one row per user/post with vote in {-1, +1}.
+create table if not exists public.feed_post_votes (
+  post_id uuid not null references public.feed_posts (id) on delete cascade,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  vote smallint not null check (vote in (-1, 1)),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (post_id, user_id)
+);
+create index if not exists feed_post_votes_user_idx on public.feed_post_votes (user_id);
+create index if not exists feed_post_votes_post_idx on public.feed_post_votes (post_id);
+
+alter table public.feed_post_votes enable row level security;
+drop policy if exists "Feed post votes are readable when authenticated" on public.feed_post_votes;
+create policy "Feed post votes are readable when authenticated"
+  on public.feed_post_votes for select to authenticated using (true);
+drop policy if exists "Users can cast votes on posts" on public.feed_post_votes;
+create policy "Users can cast votes on posts"
+  on public.feed_post_votes for insert to authenticated with check (auth.uid() = user_id);
+drop policy if exists "Users can update their votes on posts" on public.feed_post_votes;
+create policy "Users can update their votes on posts"
+  on public.feed_post_votes for update to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
+drop policy if exists "Users can clear their votes on posts" on public.feed_post_votes;
+create policy "Users can clear their votes on posts"
+  on public.feed_post_votes for delete to authenticated using (auth.uid() = user_id);
+
+create or replace function public.touch_feed_post_vote_updated_at()
 returns trigger
 language plpgsql
 security definer
 set search_path = public
 as $$
 begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists feed_post_votes_touch_updated_at on public.feed_post_votes;
+create trigger feed_post_votes_touch_updated_at
+  before update on public.feed_post_votes
+  for each row execute function public.touch_feed_post_vote_updated_at();
+
+create or replace function public.bump_feed_post_score_from_votes()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  vote_delta int := 0;
+  target_post_id uuid;
+begin
   if tg_op = 'INSERT' then
-    update public.feed_posts set likes_count = likes_count + 1 where id = new.post_id;
+    vote_delta := new.vote;
+    target_post_id := new.post_id;
+    update public.feed_posts
+      set likes_count = likes_count + vote_delta
+      where id = target_post_id;
+    return new;
+  elsif tg_op = 'UPDATE' then
+    vote_delta := new.vote - old.vote;
+    target_post_id := new.post_id;
+    if vote_delta <> 0 then
+      update public.feed_posts
+        set likes_count = likes_count + vote_delta
+        where id = target_post_id;
+    end if;
     return new;
   elsif tg_op = 'DELETE' then
-    update public.feed_posts set likes_count = greatest(0, likes_count - 1) where id = old.post_id;
+    vote_delta := -old.vote;
+    target_post_id := old.post_id;
+    update public.feed_posts
+      set likes_count = likes_count + vote_delta
+      where id = target_post_id;
     return old;
   end if;
   return null;
 end;
 $$;
 
-drop trigger if exists feed_post_likes_count_ins on public.feed_post_likes;
-drop trigger if exists feed_post_likes_count_del on public.feed_post_likes;
-create trigger feed_post_likes_count_ins
-  after insert on public.feed_post_likes
-  for each row execute function public.bump_feed_post_likes_count();
-create trigger feed_post_likes_count_del
-  after delete on public.feed_post_likes
-  for each row execute function public.bump_feed_post_likes_count();
+drop trigger if exists feed_post_votes_score_ins on public.feed_post_votes;
+drop trigger if exists feed_post_votes_score_upd on public.feed_post_votes;
+drop trigger if exists feed_post_votes_score_del on public.feed_post_votes;
+create trigger feed_post_votes_score_ins
+  after insert on public.feed_post_votes
+  for each row execute function public.bump_feed_post_score_from_votes();
+create trigger feed_post_votes_score_upd
+  after update of vote on public.feed_post_votes
+  for each row execute function public.bump_feed_post_score_from_votes();
+create trigger feed_post_votes_score_del
+  after delete on public.feed_post_votes
+  for each row execute function public.bump_feed_post_score_from_votes();
+
+-- Backfill vote rows from legacy likes table, then normalize likes_count to net vote score.
+insert into public.feed_post_votes (post_id, user_id, vote, created_at, updated_at)
+select l.post_id, l.user_id, 1, l.created_at, l.created_at
+from public.feed_post_likes l
+on conflict (post_id, user_id) do update
+set vote = excluded.vote,
+    updated_at = now();
+
+update public.feed_posts fp
+set likes_count = coalesce(v.score, 0)
+from (
+  select post_id, sum(vote)::int as score
+  from public.feed_post_votes
+  group by post_id
+) v
+where fp.id = v.post_id;
+
+update public.feed_posts
+set likes_count = 0
+where id not in (select distinct post_id from public.feed_post_votes);
 
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -389,6 +497,15 @@ create table if not exists public.product_comment (
 create index if not exists product_comment_product_id_created_idx
   on public.product_comment (product_id, created_at);
 
+-- One upvote per user per product.
+create table if not exists public.product_upvote (
+  product_id uuid not null references public.product (id) on delete cascade,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (product_id, user_id)
+);
+create index if not exists product_upvote_user_id_idx on public.product_upvote (user_id);
+
 create or replace function public.bump_product_comments_count()
 returns trigger
 language plpgsql
@@ -422,6 +539,65 @@ drop policy if exists "Users can update own products" on public.product;
 create policy "Users can update own products"
   on public.product for update to authenticated
   using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- Atomic product upvote for the web client (avoids read-then-write races).
+create or replace function public.increment_product_upvotes(p_product_id uuid)
+returns int
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  viewer_id uuid;
+  next_upvotes int;
+begin
+  viewer_id := auth.uid();
+  if viewer_id is null then
+    raise exception 'Authentication required';
+  end if;
+
+  insert into public.product_upvote (product_id, user_id)
+  values (p_product_id, viewer_id)
+  on conflict (product_id, user_id) do nothing;
+
+  if found then
+    update public.product
+    set upvotes = upvotes + 1,
+        updated_at = now()
+    where id = p_product_id
+    returning upvotes into next_upvotes;
+  else
+    select upvotes
+      into next_upvotes
+      from public.product
+     where id = p_product_id;
+  end if;
+
+  if next_upvotes is null then
+    raise exception 'Product not found: %', p_product_id;
+  end if;
+
+  return next_upvotes;
+end;
+$$;
+
+revoke all on function public.increment_product_upvotes(uuid) from public;
+grant execute on function public.increment_product_upvotes(uuid) to authenticated;
+grant execute on function public.increment_product_upvotes(uuid) to service_role;
+
+alter table public.product_upvote enable row level security;
+drop policy if exists "Users can read own product upvotes" on public.product_upvote;
+create policy "Users can read own product upvotes"
+  on public.product_upvote for select to authenticated
+  using (auth.uid() = user_id);
+drop policy if exists "Users can create own product upvotes" on public.product_upvote;
+create policy "Users can create own product upvotes"
+  on public.product_upvote for insert to authenticated
+  with check (auth.uid() = user_id);
+drop policy if exists "Users can remove own product upvotes" on public.product_upvote;
+create policy "Users can remove own product upvotes"
+  on public.product_upvote for delete to authenticated
+  using (auth.uid() = user_id);
 
 alter table public.product_comment enable row level security;
 drop policy if exists "Product comments are readable by everyone" on public.product_comment;
@@ -474,10 +650,17 @@ create table if not exists public.spaces (
   code text not null unique,
   name text not null,
   icon_url text,
+  is_public boolean not null default false,
   created_by uuid references auth.users (id) on delete set null,
   created_at timestamptz not null default now()
 );
+-- Older projects may already have `spaces` without these columns because
+-- CREATE TABLE IF NOT EXISTS does not retrofit schema changes.
+alter table public.spaces add column if not exists icon_url text;
+alter table public.spaces add column if not exists background_url text;
+alter table public.spaces add column if not exists is_public boolean not null default false;
 create index if not exists spaces_code_idx on public.spaces (code);
+create index if not exists spaces_is_public_idx on public.spaces (is_public, created_at desc);
 
 alter table public.spaces enable row level security;
 drop policy if exists "Spaces are readable by authenticated users" on public.spaces;
@@ -914,18 +1097,13 @@ grant execute on function public.get_ranked_feed_posts(uuid, int, double precisi
 
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- 11. Legacy patches (old DBs only)
+-- 11. Compatibility patches (older DBs only)
 -- ═══════════════════════════════════════════════════════════════════════════
 
 do $$
 begin
-  if not exists (
-    select 1 from information_schema.columns
-    where table_schema = 'public' and table_name = 'spaces' and column_name = 'icon_url'
-  ) then
-    alter table public.spaces add column icon_url text;
-  end if;
-
+  -- `spaces.icon_url` / `spaces.is_public` are already handled in section 7
+  -- with `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`.
   if exists (
     select 1 from information_schema.columns
     where table_schema = 'public' and table_name = 'messages' and column_name = 'text'
@@ -942,3 +1120,88 @@ begin
   alter table public.messages add column if not exists updated_at timestamptz not null default now();
   alter table public.messages add column if not exists space_id uuid references public.spaces (id) on delete cascade;
 end $$;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- 12. Core loop retention model (MVP)
+-- ═══════════════════════════════════════════════════════════════════════════
+
+alter table public.feed_posts add column if not exists post_tags text[] not null default '{}';
+alter table public.feed_posts add column if not exists likes_count int not null default 0;
+alter table public.feed_posts add column if not exists comments_count int not null default 0;
+create index if not exists feed_posts_post_tags_gin_idx on public.feed_posts using gin (post_tags);
+
+create table if not exists public.user_stats (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  followers_count int not null default 0,
+  following_count int not null default 0,
+  posts_count int not null default 0,
+  weekly_engagement_score numeric not null default 0,
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.user_interests (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  tag text not null,
+  affinity numeric not null default 0,
+  updated_at timestamptz not null default now(),
+  primary key (user_id, tag)
+);
+
+create index if not exists user_interests_user_affinity_idx on public.user_interests (user_id, affinity desc);
+
+create table if not exists public.ranking_entries (
+  "window" text not null check ("window" in ('daily', 'weekly')),
+  date_key date not null,
+  post_id uuid not null references public.feed_posts(id) on delete cascade,
+  score numeric not null,
+  rank int not null,
+  created_at timestamptz not null default now(),
+  primary key ("window", date_key, post_id)
+);
+
+create index if not exists ranking_entries_window_date_rank_idx on public.ranking_entries ("window", date_key desc, rank asc);
+
+alter table public.spaces add column if not exists linked_tag text;
+alter table public.spaces add column if not exists linked_post_id uuid references public.feed_posts(id) on delete set null;
+
+create table if not exists public.engagement_events (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id) on delete set null,
+  stage text not null check (stage in ('discover', 'react', 'follow', 'go_deeper', 'return')),
+  surface text not null check (surface in ('feed', 'ranking', 'profile', 'space', 'search')),
+  action text not null,
+  entity_type text,
+  entity_id text,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists engagement_events_created_at_idx on public.engagement_events (created_at desc);
+create index if not exists engagement_events_user_stage_idx on public.engagement_events (user_id, stage, created_at desc);
+
+alter table public.user_stats enable row level security;
+alter table public.user_interests enable row level security;
+alter table public.ranking_entries enable row level security;
+alter table public.engagement_events enable row level security;
+
+drop policy if exists "User stats readable by authenticated users" on public.user_stats;
+create policy "User stats readable by authenticated users"
+  on public.user_stats for select to authenticated using (true);
+
+drop policy if exists "Users can read own interests" on public.user_interests;
+create policy "Users can read own interests"
+  on public.user_interests for select to authenticated using (auth.uid() = user_id);
+drop policy if exists "Users can manage own interests" on public.user_interests;
+create policy "Users can manage own interests"
+  on public.user_interests for all to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+drop policy if exists "Ranking entries are readable by authenticated users" on public.ranking_entries;
+create policy "Ranking entries are readable by authenticated users"
+  on public.ranking_entries for select to authenticated using (true);
+
+drop policy if exists "Users can write own engagement events" on public.engagement_events;
+create policy "Users can write own engagement events"
+  on public.engagement_events for insert to authenticated with check (auth.uid() = user_id);
+drop policy if exists "Users can read own engagement events" on public.engagement_events;
+create policy "Users can read own engagement events"
+  on public.engagement_events for select to authenticated using (auth.uid() = user_id);
+

@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import type { FeedPost } from "@/features/feeds/feedsPostTypes";
+import type { FeedPost } from "@/features/feeds/feedPostTypes";
 import { useFeedsPosts } from "@/features/feeds/FeedsPostsContext";
 import { useAuthSnapshot } from "@/lib/auth/AuthProvider";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { publicProfilePath } from "@/lib/profilePath";
+import { trackEngagementEvent } from "@/lib/analytics/engagementEvents";
 
 function sameUser(postTag: string, myTag: string | null): boolean {
   if (!myTag) return false;
@@ -22,7 +23,7 @@ type CommentsControlProps = {
 };
 
 function CommentsControl({ count, postId, mode }: CommentsControlProps) {
-  const btnClass = `flex h-11 w-11 items-center justify-center rounded-xl border border-white/15 bg-white/10 backdrop-blur-sm ${
+  const btnClass = `inline-flex h-11 items-center gap-2 rounded-xl border border-white/15 bg-white/10 px-3 backdrop-blur-sm ${
     mode === "feed" ? "transition hover:bg-white/20" : ""
   }`;
 
@@ -46,26 +47,17 @@ function CommentsControl({ count, postId, mode }: CommentsControlProps) {
     mode === "feed" ? (
       <Link href={`/feeds/post/${postId}`} prefetch={false} className={btnClass} aria-label="View comments">
         {icon}
+        <span className="text-xs font-semibold text-white">{count}</span>
       </Link>
     ) : (
       <a href="#feed-post-comments" className={btnClass} aria-label="Comments below">
         {icon}
+        <span className="text-xs font-semibold text-white">{count}</span>
       </a>
     );
 
-  return (
-    <div className="flex flex-col items-center gap-1">
-      <span className="text-xs font-semibold text-white">{count}</span>
-      {button}
-    </div>
-  );
+  return <div>{button}</div>;
 }
-
-const heartOutlinePath =
-  "M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z";
-
-const heartFilledPath =
-  "M11.645 20.91l-.007-.003-.022-.012a15.247 15.247 0 01-.383-.218 25.18 25.18 0 01-4.244-3.17C4.688 15.36 2.25 12.174 2.25 8.25 2.25 5.322 4.714 3 7.688 3A5.5 5.5 0 0112 5.052 5.5 5.5 0 0116.313 3c2.973 0 5.437 2.322 5.437 5.25 0 3.925-2.438 7.111-4.739 9.256a25.175 25.175 0 01-4.244 3.17 15.247 15.247 0 01-.383.219l-.022.012-.007.003-.003.001a.75.75 0 01-.704 0l-.003-.001z";
 
 type PostLikeControlProps = {
   postId: string;
@@ -76,12 +68,29 @@ type PostLikeControlProps = {
 function PostLikeControl({ postId, baseCount, variant }: PostLikeControlProps) {
   const { user } = useAuthSnapshot();
   const { bumpPostLikeCount } = useFeedsPosts();
-  const [likedByMe, setLikedByMe] = useState(false);
+  const [myVote, setMyVote] = useState<-1 | 0 | 1>(0);
   const [likeBusy, setLikeBusy] = useState(false);
+
+  const syncMyVote = async () => {
+    if (!user?.id) {
+      setMyVote(0);
+      return;
+    }
+    const supabase = getSupabaseBrowserClient();
+    const { data } = await supabase
+      .from("feed_post_votes")
+      .select("vote")
+      .eq("post_id", postId)
+      .eq("user_id", user.id)
+      .maybeSingle();
+    setMyVote(((data as { vote: -1 | 1 } | null)?.vote ?? 0) as -1 | 0 | 1);
+  };
 
   useEffect(() => {
     let alive = true;
-    setLikedByMe(false);
+    queueMicrotask(() => {
+      if (alive) setMyVote(0);
+    });
     if (!user?.id) {
       return () => {
         alive = false;
@@ -89,81 +98,101 @@ function PostLikeControl({ postId, baseCount, variant }: PostLikeControlProps) {
     }
     const supabase = getSupabaseBrowserClient();
     void supabase
-      .from("feed_post_likes")
-      .select("post_id")
+      .from("feed_post_votes")
+      .select("vote")
       .eq("post_id", postId)
       .eq("user_id", user.id)
       .maybeSingle()
-      .then(({ data }: { data: { post_id: string } | null }) => {
-        if (alive) setLikedByMe(!!data);
+      .then(({ data }: { data: { vote: -1 | 1 } | null }) => {
+        if (alive) setMyVote(data?.vote ?? 0);
       });
     return () => {
       alive = false;
     };
   }, [user?.id, postId]);
 
-  const btnClass =
+  const controlClass =
     variant === "overlay"
-      ? "flex h-11 w-11 items-center justify-center rounded-xl border border-white/15 bg-white/10 backdrop-blur-sm transition hover:bg-white/15"
-      : "flex h-11 w-11 items-center justify-center rounded-xl border border-white/15 bg-white/10 backdrop-blur-sm transition hover:bg-white/20";
+      ? "inline-flex h-11 items-center gap-1 rounded-xl border border-white/15 bg-white/10 px-1.5 backdrop-blur-sm"
+      : "inline-flex h-11 items-center gap-1 rounded-xl border border-white/15 bg-white/10 px-1.5 backdrop-blur-sm";
 
-  const onToggle = async () => {
-    if (!user?.id || likeBusy) return;
+  const setVote = async (nextVote: -1 | 0 | 1) => {
+    if (!user?.id || likeBusy || myVote === nextVote) return;
     setLikeBusy(true);
     const supabase = getSupabaseBrowserClient();
-    const next = !likedByMe;
-    if (next) {
-      bumpPostLikeCount(postId, 1);
-      setLikedByMe(true);
-      const { error } = await supabase.from("feed_post_likes").insert({ post_id: postId, user_id: user.id });
-      if (error) {
-        bumpPostLikeCount(postId, -1);
-        setLikedByMe(false);
-      }
-    } else {
-      bumpPostLikeCount(postId, -1);
-      setLikedByMe(false);
+
+    const delta = nextVote - myVote;
+    bumpPostLikeCount(postId, delta);
+    setMyVote(nextVote);
+
+    if (nextVote === 0) {
       const { error } = await supabase
-        .from("feed_post_likes")
+        .from("feed_post_votes")
         .delete()
         .eq("post_id", postId)
         .eq("user_id", user.id);
       if (error) {
-        bumpPostLikeCount(postId, 1);
-        setLikedByMe(true);
+        bumpPostLikeCount(postId, -delta);
+        setMyVote(myVote);
+        if (process.env.NODE_ENV === "development") {
+          console.warn("[feeds] clear vote failed:", error.message);
+        }
+      } else {
+        void syncMyVote();
       }
+      setLikeBusy(false);
+      return;
+    }
+
+    const { error } = await supabase.from("feed_post_votes").upsert(
+      { post_id: postId, user_id: user.id, vote: nextVote },
+      { onConflict: "post_id,user_id" }
+    );
+    if (error) {
+      bumpPostLikeCount(postId, -delta);
+      setMyVote(myVote);
+      if (process.env.NODE_ENV === "development") {
+        console.warn("[feeds] vote upsert failed:", error.message);
+      }
+    } else {
+      void syncMyVote();
     }
     setLikeBusy(false);
   };
 
   return (
     <div className="flex flex-col items-center gap-1">
-      <span className="text-xs font-semibold text-white">{baseCount}</span>
-      <button
-        type="button"
-        className={btnClass}
-        disabled={!user?.id || likeBusy}
-        aria-pressed={likedByMe}
-        aria-label={likedByMe ? "Unlike" : "Like"}
-        onClick={() => void onToggle()}
-      >
-        {likedByMe ? (
-          <svg className="h-5 w-5 text-white" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-            <path d={heartFilledPath} />
+      <div className={controlClass}>
+        <button
+          type="button"
+          className={`flex h-8 w-8 items-center justify-center rounded-lg transition ${
+            myVote === 1 ? "bg-white/20 text-white" : "text-slate-200 hover:bg-white/15"
+          }`}
+          disabled={!user?.id || likeBusy}
+          aria-pressed={myVote === 1}
+          aria-label={myVote === 1 ? "Remove upvote" : "Upvote"}
+          onClick={() => void setVote(myVote === 1 ? 0 : 1)}
+        >
+          <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.25} aria-hidden>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M7 14l5-5 5 5" />
           </svg>
-        ) : (
-          <svg
-            className="h-5 w-5 text-white"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth={1.5}
-            aria-hidden
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" d={heartOutlinePath} />
+        </button>
+        <span className="min-w-[2ch] text-center text-xs font-semibold text-white">{baseCount}</span>
+        <button
+          type="button"
+          className={`flex h-8 w-8 items-center justify-center rounded-lg transition ${
+            myVote === -1 ? "bg-white/20 text-white" : "text-slate-200 hover:bg-white/15"
+          }`}
+          disabled={!user?.id || likeBusy}
+          aria-pressed={myVote === -1}
+          aria-label={myVote === -1 ? "Remove downvote" : "Downvote"}
+          onClick={() => void setVote(myVote === -1 ? 0 : -1)}
+        >
+          <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.25} aria-hidden>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M7 10l5 5 5-5" />
           </svg>
-        )}
-      </button>
+        </button>
+      </div>
     </div>
   );
 }
@@ -179,7 +208,78 @@ export type FeedsPostCardProps = {
  * (full-bleed image block: `w-full`, no horizontal padding inside the media row).
  */
 export function FeedsPostCard({ post, postIndex, mode = "feed" }: FeedsPostCardProps) {
-  const { tag: myTag } = useAuthSnapshot();
+  const { tag: myTag, user } = useAuthSnapshot();
+  const [isFollowing, setIsFollowing] = useState(false);
+  const [followBusy, setFollowBusy] = useState(false);
+  const isMe = sameUser(post.authorTag, myTag);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!user?.id || isMe) {
+      queueMicrotask(() => {
+        if (!cancelled) setIsFollowing(false);
+      });
+      return;
+    }
+    const supabase = getSupabaseBrowserClient();
+    void supabase
+      .from("profiles")
+      .select("id")
+      .ilike("username", post.authorTag.replace(/^@/, ""))
+      .maybeSingle()
+      .then(({ data }: { data: { id: string } | null }) => {
+        if (!data?.id || cancelled) return;
+        return supabase
+          .from("follows")
+          .select("follower_id")
+          .eq("follower_id", user.id)
+          .eq("following_id", data.id)
+          .maybeSingle()
+          .then(({ data: follow }: { data: { follower_id: string } | null }) => {
+            if (!cancelled) setIsFollowing(!!follow);
+          });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, post.authorTag, isMe]);
+
+  const toggleFollow = async () => {
+    if (!user?.id || followBusy || isMe) return;
+    const supabase = getSupabaseBrowserClient();
+    setFollowBusy(true);
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("id")
+      .ilike("username", post.authorTag.replace(/^@/, ""))
+      .maybeSingle();
+    const profileId = (profile as { id?: string } | null)?.id;
+    if (!profileId) {
+      setFollowBusy(false);
+      return;
+    }
+    if (isFollowing) {
+      await supabase
+        .from("follows")
+        .delete()
+        .eq("follower_id", user.id)
+        .eq("following_id", profileId);
+      setIsFollowing(false);
+    } else {
+      await supabase
+        .from("follows")
+        .insert({ follower_id: user.id, following_id: profileId });
+      setIsFollowing(true);
+      await trackEngagementEvent({
+        stage: "follow",
+        surface: "feed",
+        action: "follow_creator_from_post",
+        entityType: "user",
+        entityId: profileId,
+      });
+    }
+    setFollowBusy(false);
+  };
 
   if (post.surface === "Launch" && post.launchName) {
     return (
@@ -287,12 +387,14 @@ export function FeedsPostCard({ post, postIndex, mode = "feed" }: FeedsPostCardP
                 {post.surface}
               </span>
             )}
-            {!sameUser(post.authorTag, myTag) && (
+            {!isMe && (
               <button
                 type="button"
-                className="shrink-0 rounded-lg bg-[#1e3a5f] px-3 py-1 text-xs font-semibold text-white ring-1 ring-sky-500/30 sm:px-4 sm:py-1.5 sm:text-sm"
+                onClick={() => void toggleFollow()}
+                disabled={followBusy}
+                className="shrink-0 rounded-lg bg-[#1e3a5f] px-3 py-1 text-xs font-semibold text-white ring-1 ring-sky-500/30 disabled:opacity-60 sm:px-4 sm:py-1.5 sm:text-sm"
               >
-                Follow
+                {isFollowing ? "Following" : "Follow"}
               </button>
             )}
           </div>

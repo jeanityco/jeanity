@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { prepareSpaceIconForUpload } from "@/lib/prepareSpaceIconForUpload";
+import { prepareSpaceBackgroundForUpload } from "@/lib/prepareSpaceBackgroundForUpload";
 import { readFileAsDataUrl } from "@/lib/readFileAsDataUrl";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { shellLaunchGradientClass } from "@/lib/ui/appShellClasses";
@@ -24,7 +25,12 @@ export type CreateSpaceResult =
   | { ok: true; code: string; iconWarning?: string }
   | { ok: false; error: string };
 
-export async function createSpaceInDb(name: string, iconFile: File | null): Promise<CreateSpaceResult> {
+export async function createSpaceInDb(
+  name: string,
+  iconFile: File | null,
+  backgroundFile: File | null,
+  isPublic: boolean
+): Promise<CreateSpaceResult> {
   const supabase = getSupabaseBrowserClient();
   const {
     data: { user },
@@ -33,14 +39,33 @@ export async function createSpaceInDb(name: string, iconFile: File | null): Prom
 
   let code = generateSpaceCode();
   let space: { id: string; code: string } | null = null;
+  const trimmedName = name.trim();
   for (let attempt = 0; attempt < 3; attempt++) {
-    const { data, error } = await supabase
+    let data: { id: string; code?: string | null } | null = null;
+    let error: { code?: string; message?: string } | null = null;
+
+    // Primary path for latest schema.
+    const primary = await supabase
       .from("spaces")
-      .insert({ code, name: name.trim(), created_by: user.id })
-      .select("id, code")
+      .insert({ code, name: trimmedName, created_by: user.id, is_public: isPublic })
+      .select("id")
       .single();
+    data = primary.data as { id: string; code?: string | null } | null;
+    error = primary.error as { code?: string; message?: string } | null;
+
+    // Fallback for older schema where `is_public` may not exist.
+    if (error && /is_public/i.test(error.message ?? "")) {
+      const fallback = await supabase
+        .from("spaces")
+        .insert({ code, name: trimmedName, created_by: user.id })
+        .select("id")
+        .single();
+      data = fallback.data as { id: string; code?: string | null } | null;
+      error = fallback.error as { code?: string; message?: string } | null;
+    }
+
     if (!error) {
-      space = data;
+      space = { id: data!.id, code };
       break;
     }
     if (error.code === "23505") code = generateSpaceCode();
@@ -99,6 +124,49 @@ export async function createSpaceInDb(name: string, iconFile: File | null): Prom
     }
   }
 
+  if (backgroundFile) {
+    let uploadFile: File = backgroundFile;
+    let objectPath: string;
+    let contentType: string | undefined;
+    try {
+      uploadFile = await prepareSpaceBackgroundForUpload(backgroundFile);
+      objectPath = `${user.id}/${space.id}.jpg`;
+      contentType = "image/jpeg";
+    } catch (e) {
+      console.warn("space background normalize (using original file):", e);
+      const ext =
+        (backgroundFile.name.includes(".") ? backgroundFile.name.split(".").pop() : null) || "jpg";
+      const safeExt = /^[a-z0-9]+$/i.test(ext) ? ext.toLowerCase() : "jpg";
+      objectPath = `${user.id}/${space.id}.${safeExt}`;
+      contentType = backgroundFile.type || undefined;
+    }
+    const { error: upErr } = await supabase.storage
+      .from("space_backgrounds")
+      .upload(objectPath, uploadFile, {
+        upsert: true,
+        contentType,
+      });
+    if (upErr) {
+      console.error("space_backgrounds upload:", upErr);
+      // Non-fatal: keep space creation successful even if background fails.
+    } else {
+      const { data: urlData } = supabase.storage.from("space_backgrounds").getPublicUrl(objectPath);
+      const { data: updated, error: bgUpdErr } = await supabase
+        .from("spaces")
+        .update({ background_url: urlData.publicUrl })
+        .eq("id", space.id)
+        .select("background_url")
+        .maybeSingle();
+      if (bgUpdErr) {
+        console.error("spaces background_url update:", bgUpdErr);
+      } else if (!updated?.background_url) {
+        console.warn(
+          "Background uploaded but background_url was not saved (add spaces.background_url column or fix RLS update on spaces).",
+        );
+      }
+    }
+  }
+
   return { ok: true, code: space.code, ...(iconWarning ? { iconWarning } : {}) };
 }
 
@@ -111,18 +179,28 @@ export function CreateSpaceModal({ open, onClose }: CreateSpaceModalProps) {
   const [name, setName] = useState("");
   const [iconPreview, setIconPreview] = useState<string | null>(null);
   const [iconFile, setIconFile] = useState<File | null>(null);
+  const [bgPreview, setBgPreview] = useState<string | null>(null);
+  const [bgFile, setBgFile] = useState<File | null>(null);
+  const [isPublic, setIsPublic] = useState(false);
   const [creating, setCreating] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const bgFileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open) return;
-    setName("");
-    setIconPreview(null);
-    setIconFile(null);
-    setFormError(null);
-    setCreating(false);
-    if (fileInputRef.current) fileInputRef.current.value = "";
+    queueMicrotask(() => {
+      setName("");
+      setIconPreview(null);
+      setIconFile(null);
+      setBgPreview(null);
+      setBgFile(null);
+      setIsPublic(false);
+      setFormError(null);
+      setCreating(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      if (bgFileInputRef.current) bgFileInputRef.current.value = "";
+    });
   }, [open]);
 
   useEffect(() => {
@@ -141,13 +219,20 @@ export function CreateSpaceModal({ open, onClose }: CreateSpaceModalProps) {
     void readFileAsDataUrl(file).then(setIconPreview);
   };
 
+  const handleBgFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !file.type.startsWith("image/")) return;
+    setBgFile(file);
+    void readFileAsDataUrl(file).then(setBgPreview);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = name.trim();
     if (!trimmed) return;
     setFormError(null);
     setCreating(true);
-    const result = await createSpaceInDb(trimmed, iconFile);
+    const result = await createSpaceInDb(trimmed, iconFile, bgFile, isPublic);
     setCreating(false);
     if (result.ok) {
       if (result.iconWarning && iconFile) {
@@ -199,6 +284,40 @@ export function CreateSpaceModal({ open, onClose }: CreateSpaceModalProps) {
           <p className="mt-1 text-sm text-slate-400">Add a space to your collection</p>
 
           <form onSubmit={(e) => void handleSubmit(e)} className="mt-6 space-y-6">
+            <div className="space-y-2">
+              <p className="text-sm font-semibold text-white">Background picture</p>
+              <button
+                type="button"
+                onClick={() => bgFileInputRef.current?.click()}
+                className="group relative w-full overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] ring-1 ring-white/[0.06] transition hover:border-white/20"
+              >
+                <input
+                  ref={bgFileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleBgFileChange}
+                />
+                <div className="relative aspect-[16/7] w-full">
+                  {bgPreview ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={bgPreview} alt="" className="absolute inset-0 h-full w-full object-cover" />
+                  ) : (
+                    <div className="absolute inset-0 bg-[radial-gradient(120%_80%_at_10%_0%,rgba(56,189,248,0.18)_0%,rgba(16,185,129,0.12)_38%,rgba(15,20,25,0.9)_100%)]" />
+                  )}
+                  <div className="absolute inset-0 bg-black/25 opacity-0 transition group-hover:opacity-100" />
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span className="rounded-full border border-white/15 bg-black/35 px-4 py-2 text-xs font-semibold text-slate-200 backdrop-blur-sm transition group-hover:bg-black/45">
+                      {bgPreview ? "Change background" : "Upload background"}
+                    </span>
+                  </div>
+                </div>
+              </button>
+              <p className="text-xs text-slate-500">
+                Optional. A wide image looks best (it will be resized and compressed).
+              </p>
+            </div>
+
             <div className="flex justify-center">
               <button
                 type="button"
@@ -260,6 +379,37 @@ export function CreateSpaceModal({ open, onClose }: CreateSpaceModalProps) {
                 autoComplete="off"
                 className="mt-2 w-full rounded-xl border border-white/10 bg-white/[0.06] px-3.5 py-3 text-sm text-white placeholder:text-slate-500 focus:border-sky-500/40 focus:outline-none focus:ring-1 focus:ring-sky-500/30"
               />
+            </div>
+
+            <div>
+              <p className="block text-sm font-semibold text-white">Visibility</p>
+              <div className="mt-2 grid grid-cols-2 gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-1">
+                <button
+                  type="button"
+                  onClick={() => setIsPublic(true)}
+                  className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${
+                    isPublic
+                      ? "bg-sky-500/20 text-white ring-1 ring-sky-500/40"
+                      : "text-slate-400 hover:bg-white/[0.04] hover:text-slate-200"
+                  }`}
+                >
+                  Public
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsPublic(false)}
+                  className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${
+                    !isPublic
+                      ? "bg-sky-500/20 text-white ring-1 ring-sky-500/40"
+                      : "text-slate-400 hover:bg-white/[0.04] hover:text-slate-200"
+                  }`}
+                >
+                  Private
+                </button>
+              </div>
+              <p className="mt-2 text-xs text-slate-500">
+                Public spaces appear in the Feeds `Spaces` tab. Private spaces are invite-only.
+              </p>
             </div>
 
             {formError && <p className="text-center text-xs font-medium text-rose-400">{formError}</p>}

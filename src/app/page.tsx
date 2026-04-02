@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { safeAppPathRedirect } from "@/lib/auth/safeRedirect";
 
@@ -38,6 +38,7 @@ const SIGNUP_CATEGORY_OPTIONS = [
 ] as const;
 
 export default function Home() {
+  const OTP_COOLDOWN_KEY = "jeanity_otp_cooldown_until";
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showSignInModal, setShowSignInModal] = useState(false);
   const [dobMonth, setDobMonth] = useState<string>("");
@@ -67,9 +68,101 @@ export default function Home() {
   );
   const [isSendingVerification, setIsSendingVerification] = useState(false);
   const [verificationSent, setVerificationSent] = useState(false);
+  const [otpCooldownUntil, setOtpCooldownUntil] = useState<number>(0);
+  const [nowTs, setNowTs] = useState<number>(() => Date.now());
+  const [avatarUploadError, setAvatarUploadError] = useState<string | null>(null);
+  const avatarFileRef = useRef<HTMLInputElement>(null);
+
+  const MAX_AVATAR_PX = 256;
+  const MAX_AVATAR_QUALITY = 0.88;
+
+  const onAvatarFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !file.type.startsWith("image/")) return;
+    setAvatarUploadError(null);
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const w = img.naturalWidth;
+      const h = img.naturalHeight;
+      let dw = w;
+      let dh = h;
+      if (w > MAX_AVATAR_PX || h > MAX_AVATAR_PX) {
+        if (w >= h) {
+          dw = MAX_AVATAR_PX;
+          dh = Math.round((h * MAX_AVATAR_PX) / w);
+        } else {
+          dh = MAX_AVATAR_PX;
+          dw = Math.round((w * MAX_AVATAR_PX) / h);
+        }
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = dw;
+      canvas.height = dh;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        setAvatarUploadError("Could not process image.");
+        return;
+      }
+      ctx.drawImage(img, 0, 0, dw, dh);
+      const dataUrl = canvas.toDataURL("image/jpeg", MAX_AVATAR_QUALITY);
+      if (dataUrl.length > 200_000) {
+        setAvatarUploadError("Image too large after resize. Try a simpler image.");
+        return;
+      }
+      setAvatarChoice(dataUrl);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      setAvatarUploadError("Could not load image.");
+    };
+    img.src = url;
+    // Allow re-selecting the same file later (onChange won't fire otherwise).
+    e.target.value = "";
+  };
+
+  const uploadAvatarIfNeeded = async (
+    userId: string,
+    avatar: string | null
+  ): Promise<string | null> => {
+    if (!avatar) return null;
+    if (!avatar.startsWith("data:image")) return avatar;
+    const base64 = avatar.split(",")[1];
+    if (!base64) throw new Error("Invalid avatar image data.");
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const blob = new Blob([bytes], { type: "image/jpeg" });
+    const supabase = getSupabaseBrowserClient();
+    const path = `${userId}/avatar.jpg`;
+    const { error: uploadError } = await supabase.storage
+      .from("avatars")
+      .upload(path, blob, {
+        cacheControl: "3600",
+        upsert: true,
+        contentType: "image/jpeg",
+      });
+    if (uploadError) {
+      const msg = uploadError.message || "Avatar upload failed.";
+      throw new Error(
+        msg.includes("Bucket not found") || msg.includes("not found")
+          ? "Storage bucket 'avatars' missing. In Supabase Dashboard create public bucket 'avatars', then apply storage policies from schema.sql."
+          : msg
+      );
+    }
+    const { data: urlData } = supabase.storage.from("avatars").getPublicUrl(path);
+    return urlData.publicUrl;
+  };
 
   async function sendVerificationEmail() {
     if (!email.trim()) return;
+    const remainingMs = otpCooldownUntil - Date.now();
+    if (remainingMs > 0) {
+      const seconds = Math.ceil(remainingMs / 1000);
+      setVerificationError(`Too many attempts. Please wait ${seconds}s and try again.`);
+      return;
+    }
     setIsSendingVerification(true);
     setVerificationError(null);
     try {
@@ -81,15 +174,56 @@ export default function Home() {
         },
       });
       if (error) {
+        const status = (error as { status?: number }).status;
+        if (status === 429) {
+          const cooldownMs = 5 * 60_000;
+          const until = Date.now() + cooldownMs;
+          setOtpCooldownUntil(until);
+          if (typeof window !== "undefined") {
+            window.localStorage.setItem(OTP_COOLDOWN_KEY, String(until));
+          }
+          setVerificationError("Too many verification requests. Please wait a few minutes before resending.");
+          setVerificationSent(false);
+          return;
+        }
         setVerificationError(error.message);
         setVerificationSent(false);
         return;
+      }
+      const until = Date.now() + 30_000;
+      setOtpCooldownUntil(until);
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(OTP_COOLDOWN_KEY, String(until));
       }
       setVerificationSent(true);
     } finally {
       setIsSendingVerification(false);
     }
   }
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const raw = window.localStorage.getItem(OTP_COOLDOWN_KEY);
+    if (!raw) return;
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed) || parsed <= Date.now()) {
+      window.localStorage.removeItem(OTP_COOLDOWN_KEY);
+      return;
+    }
+    setOtpCooldownUntil(parsed);
+  }, []);
+
+  useEffect(() => {
+    if (otpCooldownUntil <= Date.now()) return;
+    const id = window.setInterval(() => setNowTs(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [otpCooldownUntil]);
+
+  useEffect(() => {
+    if (otpCooldownUntil > Date.now()) return;
+    if (typeof window === "undefined") return;
+    window.localStorage.removeItem(OTP_COOLDOWN_KEY);
+  }, [otpCooldownUntil, nowTs]);
 
   useEffect(() => {
     if (
@@ -122,6 +256,7 @@ export default function Home() {
       monthNumber > 0 ? getDaysInMonth(monthNumber, yearNumber) : 31;
     return Array.from({ length: days }, (_, i) => String(i + 1));
   }, [dobMonth, dobYear]);
+  const otpCooldownSeconds = Math.max(0, Math.ceil((otpCooldownUntil - nowTs) / 1000));
 
   return (
     <>
@@ -228,7 +363,9 @@ export default function Home() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setShowSignInModal(true)}
+                    onClick={() => {
+                      setShowSignInModal(true);
+                    }}
                     className="inline-flex w-full items-center justify-center gap-2.5 rounded-full border border-white/15 bg-[#0a0a0a]/60 px-7 py-3 text-sm font-semibold text-slate-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-sm transition hover:border-white/25 hover:bg-[#121214]/80 sm:w-auto"
                   >
                     <span
@@ -473,11 +610,11 @@ export default function Home() {
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                       <button
                         type="button"
-                        disabled={isSendingVerification}
+                        disabled={isSendingVerification || otpCooldownSeconds > 0}
                         onClick={() => void sendVerificationEmail()}
                         className="text-sm font-medium text-sky-400 hover:text-sky-300 disabled:opacity-50"
                       >
-                        Resend code
+                        {otpCooldownSeconds > 0 ? `Resend in ${otpCooldownSeconds}s` : "Resend code"}
                       </button>
                       <button
                         type="button"
@@ -572,20 +709,36 @@ export default function Home() {
                   </div>
 
                   <div className="flex flex-col items-center gap-6 pt-2">
+                    <input
+                      ref={avatarFileRef}
+                      type="file"
+                      accept="image/*"
+                      className="sr-only"
+                      onClick={(e) => {
+                        // Ensure picker can emit change even for same file.
+                        (e.currentTarget as HTMLInputElement).value = "";
+                      }}
+                      onChange={onAvatarFile}
+                    />
                     <div className="relative flex h-24 w-24 items-center justify-center rounded-2xl bg-slate-800/80 ring-4 ring-slate-700 shadow-[0_18px_40px_rgba(15,23,42,0.9)]">
-                      <span className="text-4xl">
-                        {avatarChoice || "👤"}
-                      </span>
+                      {avatarChoice?.startsWith("data:image") ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={avatarChoice} alt="" className="h-full w-full rounded-2xl object-cover" />
+                      ) : (
+                        <span className="text-4xl">{avatarChoice || "👤"}</span>
+                      )}
                       <button
                         type="button"
+                        onClick={() => avatarFileRef.current?.click()}
                         className="absolute -bottom-1 -right-1 flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-tr from-emerald-400 to-sky-400 text-slate-950 text-lg shadow-[0_10px_25px_rgba(34,197,94,0.7)]"
                       >
                         +
                       </button>
                     </div>
                     <p className="text-xs text-slate-500">
-                      You can always change this later in your profile.
+                      Upload image or pick an emoji. You can always change this later in your profile.
                     </p>
+                    {avatarUploadError && <p className="text-xs font-medium text-rose-400">{avatarUploadError}</p>}
                   </div>
 
                   <form
@@ -609,20 +762,26 @@ export default function Home() {
                         Quick picks
                       </p>
                       <div className="flex flex-wrap gap-3">
-                        {["📷", "😍", "😂", "🙂", "💜", "🌙", "🔥"].map((emoji) => (
-                          <button
-                            key={emoji}
-                            type="button"
-                            onClick={() => setAvatarChoice(emoji)}
-                            className={`flex h-10 w-10 items-center justify-center rounded-xl border text-xl transition ${
-                              avatarChoice === emoji
-                                ? "border-emerald-400 bg-slate-900/80 shadow-[0_0_20px_rgba(16,185,129,0.7)]"
-                                : "border-slate-700 bg-slate-900/40 hover:border-slate-400"
-                            }`}
-                          >
-                            {emoji}
-                          </button>
-                        ))}
+                        {["📷", "😍", "😂", "🙂", "💜", "🌙", "🔥"].map((emoji) => {
+                          const selected = avatarChoice === emoji;
+                          return (
+                            <button
+                              key={emoji}
+                              type="button"
+                              onClick={() => {
+                                setAvatarUploadError(null);
+                                setAvatarChoice(selected ? null : emoji);
+                              }}
+                              className={`flex h-10 w-10 items-center justify-center rounded-xl border text-xl transition ${
+                                selected
+                                  ? "border-emerald-400 bg-slate-900/80 shadow-[0_0_20px_rgba(16,185,129,0.7)]"
+                                  : "border-slate-700 bg-slate-900/40 hover:border-slate-400"
+                              }`}
+                            >
+                              {emoji}
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
 
@@ -706,12 +865,16 @@ export default function Home() {
                           data: { session },
                         } = await supabase.auth.getSession();
                         if (session?.user) {
+                          const avatarValue = await uploadAvatarIfNeeded(
+                            session.user.id,
+                            avatarChoice
+                          );
                           const { error } = await supabase.auth.updateUser({
                             password: createPassword,
                             data: {
                               name,
                               username,
-                              avatar: avatarChoice,
+                              avatar: avatarValue,
                               interest_categories: interestCategories,
                             },
                           });
@@ -730,6 +893,9 @@ export default function Home() {
                             console.error("profiles.interest_categories:", profileErr);
                           }
                         } else {
+                          const avatarMetadata = avatarChoice?.startsWith("data:image")
+                            ? null
+                            : avatarChoice;
                           const { data: signUpData, error } =
                             await supabase.auth.signUp({
                               email,
@@ -738,7 +904,7 @@ export default function Home() {
                                 data: {
                                   name,
                                   username,
-                                  avatar: avatarChoice,
+                                  avatar: avatarMetadata,
                                   interest_categories: interestCategories,
                                 },
                               },
@@ -749,6 +915,15 @@ export default function Home() {
                           }
                           const signedInId = signUpData.session?.user?.id;
                           if (signedInId) {
+                            if (avatarChoice?.startsWith("data:image")) {
+                              const avatarValue = await uploadAvatarIfNeeded(signedInId, avatarChoice);
+                              const { error: avatarErr } = await supabase.auth.updateUser({
+                                data: { avatar: avatarValue },
+                              });
+                              if (avatarErr) {
+                                console.error("auth.updateUser avatar:", avatarErr);
+                              }
+                            }
                             const { error: profileErr } = await supabase
                               .from("profiles")
                               .update({

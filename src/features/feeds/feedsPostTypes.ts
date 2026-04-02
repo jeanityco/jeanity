@@ -17,6 +17,7 @@ export type PostComment = {
 
 export type FeedPost = {
   id: string;
+  userId?: string | null;
   authorName: string;
   authorTag: string;
   avatarUrl: string | null;
@@ -26,6 +27,8 @@ export type FeedPost = {
   likes: number;
   comments: number;
   timeLabel: string;
+  createdAt?: string;
+  postTags?: string[];
   surface?: PostSurface;
   launchName?: string;
   launchCategories?: string[];

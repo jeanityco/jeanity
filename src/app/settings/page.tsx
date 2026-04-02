@@ -50,6 +50,8 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
 
   const fileRef = useRef<HTMLInputElement>(null);
+  const isMountedRef = useRef(true);
+  const reloadTimerRef = useRef<number | null>(null);
 
   /* No page scroll / wheel scroll on Settings (restore when leaving) */
   useEffect(() => {
@@ -60,6 +62,10 @@ export default function SettingsPage() {
     html.style.overflow = "hidden";
     body.style.overflow = "hidden";
     return () => {
+      isMountedRef.current = false;
+      if (reloadTimerRef.current !== null) {
+        window.clearTimeout(reloadTimerRef.current);
+      }
       html.style.overflow = prevHtml;
       body.style.overflow = prevBody;
     };
@@ -78,9 +84,7 @@ export default function SettingsPage() {
     );
   }, [user, m.name, m.full_name, m.bio, m.avatar]);
 
-  const reloadSession = useCallback(() => {
-    window.location.reload();
-  }, []);
+  const reloadSession = useCallback(() => window.location.reload(), []);
 
   const MAX_AVATAR_PX = 256;
   const MAX_AVATAR_QUALITY = 0.88;
@@ -111,19 +115,23 @@ export default function SettingsPage() {
       canvas.height = dh;
       const ctx = canvas.getContext("2d");
       if (!ctx) {
+        if (!isMountedRef.current) return;
         setErr("Could not process image.");
         return;
       }
       ctx.drawImage(img, 0, 0, dw, dh);
       const dataUrl = canvas.toDataURL("image/jpeg", MAX_AVATAR_QUALITY);
       if (dataUrl.length > 200_000) {
+        if (!isMountedRef.current) return;
         setErr("Image too large after resize. Try a simpler image.");
         return;
       }
+      if (!isMountedRef.current) return;
       setAvatar(dataUrl);
     };
     img.onerror = () => {
       URL.revokeObjectURL(url);
+      if (!isMountedRef.current) return;
       setErr("Could not load image.");
     };
     img.src = url;
@@ -196,6 +204,7 @@ export default function SettingsPage() {
       }
       const { error } = await supabase.auth.updateUser(payload);
       if (error) throw error;
+      if (!isMountedRef.current) return;
       const parts: string[] = ["Saved."];
       if (payload.password) {
         parts.push("Password updated.");
@@ -203,17 +212,19 @@ export default function SettingsPage() {
         setPasswordConfirm("");
       }
       setMsg(parts.join(" "));
-      setTimeout(reloadSession, 800);
+      reloadTimerRef.current = window.setTimeout(reloadSession, 800);
     } catch (e: unknown) {
+      if (!isMountedRef.current) return;
       setErr(e instanceof Error ? e.message : "Could not save.");
     } finally {
+      if (!isMountedRef.current) return;
       setSaving(false);
     }
   };
 
   return (
     <AppShell
-      active="feeds"
+      active="settings"
       mainClassName="h-dvh max-h-dvh overflow-hidden bg-[#0a0e1a] text-white antialiased md:flex md:flex-row md:min-h-0"
     >
       <div className={shellSettingsColumn}>
