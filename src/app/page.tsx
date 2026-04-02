@@ -250,6 +250,26 @@ export default function Home() {
     if (p.get("signup") === "1") setShowCreateModal(true);
   }, []);
 
+  useEffect(() => {
+    if (!showCreateModal && !showSignInModal) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (showCreateModal) setShowCreateModal(false);
+      if (showSignInModal) setShowSignInModal(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [showCreateModal, showSignInModal]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const hasModalOpen = showCreateModal || showSignInModal;
+    document.body.style.overflow = hasModalOpen ? "hidden" : "";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [showCreateModal, showSignInModal]);
+
   const yearOptions = useMemo(() => {
     const current = new Date().getFullYear();
     return Array.from({ length: 100 }, (_, i) => String(current - i));
@@ -278,10 +298,10 @@ export default function Home() {
         {/* Glass surface — fills viewport */}
         <div className="relative z-[1] flex min-h-dvh min-h-[100svh] flex-1 flex-col border-y border-white/[0.07] bg-gradient-to-b from-white/[0.06] via-[#0a0a0c]/75 to-[#050505]/90 backdrop-blur-[32px] sm:border-x sm:border-white/[0.06] md:m-3 md:min-h-[calc(100dvh-1.5rem)] md:rounded-[2rem] md:shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_40px_120px_rgba(0,0,0,0.65)]">
           <div className="flex flex-1 flex-col justify-center px-4 py-8 pt-[max(1.25rem,env(safe-area-inset-top,0px))] pb-[max(1.5rem,env(safe-area-inset-bottom,0px))] sm:px-8 sm:py-12 md:px-14 md:py-14 lg:px-20 lg:py-16 xl:px-24">
-            <div className="mx-auto grid w-full max-w-6xl flex-1 items-center gap-10 md:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] md:gap-14 lg:gap-16 xl:gap-20">
+            <div className="mx-auto grid w-full max-w-6xl flex-1 items-center gap-8 sm:gap-10 md:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] md:gap-14 lg:gap-16 xl:gap-20">
               {/* Card stack */}
               <div className="flex justify-center md:justify-start">
-                <div className="animate-hero-cards relative h-[min(52vw,280px)] w-[min(42vw,200px)] sm:h-80 sm:w-56 md:h-96 md:w-64 lg:h-[22rem] lg:w-72">
+                <div className="animate-hero-cards relative h-[220px] w-[160px] min-[420px]:h-[260px] min-[420px]:w-[190px] sm:h-80 sm:w-56 md:h-96 md:w-64 lg:h-[22rem] lg:w-72">
                   {/* Back — deep cyan / navy tilt */}
                   <div
                     className="absolute left-6 top-10 h-[85%] w-[78%] rounded-[1.35rem] bg-gradient-to-b from-cyan-500/90 via-teal-600 to-slate-900 opacity-80 shadow-[0_0_60px_rgba(34,211,238,0.25),0_24px_50px_rgba(0,0,0,0.6)] ring-1 ring-white/20 sm:left-8 sm:top-12 md:left-10"
@@ -331,16 +351,16 @@ export default function Home() {
               </div>
 
               {/* Copy + CTAs */}
-              <div className="flex flex-col justify-center space-y-10">
-                <div className="space-y-6">
-                  <p className="text-xs font-bold uppercase tracking-[0.35em] text-slate-500 sm:text-sm">
+              <div className="flex flex-col justify-center space-y-8 sm:space-y-10">
+                <div className="space-y-5 sm:space-y-6">
+                  <p className="text-[11px] font-bold uppercase tracking-[0.28em] text-slate-500 sm:text-sm sm:tracking-[0.35em]">
                     JEANITY
                   </p>
-                  <h1 className="max-w-xl text-[clamp(1.85rem,5vw,3.25rem)] font-bold leading-[1.08] tracking-tight">
+                  <h1 className="max-w-xl text-[clamp(1.75rem,7vw,3.25rem)] font-bold leading-[1.08] tracking-tight">
                     <span className="text-white">Connect Beyond </span>
                     <span className="text-slate-500">Boundaries</span>
                   </h1>
-                  <p className="max-w-lg text-base leading-relaxed text-slate-400 sm:text-lg">
+                  <p className="max-w-lg text-sm leading-relaxed text-slate-400 sm:text-base md:text-lg">
                     Jeanity helps you discover real-time vibes, join meaningful conversations,
                     and build connections that feel close&nbsp;— even when you are worlds apart.
                   </p>
@@ -388,13 +408,13 @@ export default function Home() {
       </main>
 
       {showCreateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 px-4 py-4 backdrop-blur-sm sm:items-center sm:py-6">
           <div
             className="absolute inset-0"
             onClick={() => setShowCreateModal(false)}
           />
 
-          <div className="relative z-10 w-full max-w-xl rounded-3xl bg-slate-950/95 border border-slate-700/60 shadow-[0_32px_120px_rgba(15,23,42,0.95)]">
+          <div className="relative z-10 my-auto w-full max-w-xl overflow-hidden rounded-3xl border border-slate-700/60 bg-slate-950/95 shadow-[0_32px_120px_rgba(15,23,42,0.95)]">
             <div className="flex items-center justify-between px-6 pt-5 sm:px-8">
               <div className="w-8" />
               <div className="flex-1 text-center text-sm font-semibold tracking-[0.25em] uppercase text-slate-400">
@@ -410,7 +430,8 @@ export default function Home() {
               </button>
             </div>
 
-            <div className="px-6 pb-6 pt-4 sm:px-8 sm:pb-8 space-y-6">
+            <div className="max-h-[calc(100dvh-7rem)] overflow-y-auto px-6 pb-6 pt-4 sm:max-h-[min(80dvh,760px)] sm:px-8 sm:pb-8">
+              <div className="space-y-6">
               {createStep === "details" ? (
                 <>
                   <div className="space-y-1">
@@ -1019,19 +1040,20 @@ export default function Home() {
                   </form>
                 </>
               )}
+              </div>
             </div>
           </div>
         </div>
       )}
 
       {showSignInModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 px-4 py-4 backdrop-blur-sm sm:items-center sm:py-6">
           <div
             className="absolute inset-0"
             onClick={() => setShowSignInModal(false)}
           />
 
-          <div className="relative z-10 w-full max-w-xl rounded-3xl bg-slate-950/95 border border-slate-700/60 shadow-[0_32px_120px_rgba(15,23,42,0.95)]">
+          <div className="relative z-10 my-auto w-full max-w-xl overflow-hidden rounded-3xl border border-slate-700/60 bg-slate-950/95 shadow-[0_32px_120px_rgba(15,23,42,0.95)]">
             <div className="flex items-center justify-between px-6 pt-5 sm:px-8">
               <div className="w-8" />
               <div className="flex-1 text-center text-sm font-semibold tracking-[0.25em] uppercase text-slate-400">
@@ -1047,7 +1069,8 @@ export default function Home() {
               </button>
             </div>
 
-            <div className="px-6 pb-6 pt-4 sm:px-8 sm:pb-8 space-y-6">
+            <div className="max-h-[calc(100dvh-7rem)] overflow-y-auto px-6 pb-6 pt-4 sm:max-h-[min(80dvh,760px)] sm:px-8 sm:pb-8">
+              <div className="space-y-6">
               <div className="space-y-1">
                 <h2 className="text-xl sm:text-2xl font-semibold text-slate-50">
                   Enter your password
@@ -1149,6 +1172,7 @@ export default function Home() {
                   </button>
                 </p>
               </form>
+              </div>
             </div>
           </div>
         </div>

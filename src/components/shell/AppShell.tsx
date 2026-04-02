@@ -1,10 +1,11 @@
  "use client";
 
 import type { ReactNode } from "react";
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
   AppBackground,
+  AppMobileDrawer,
   AppMobileNav,
   AppSidebar,
   type AppNavActive,
@@ -30,11 +31,88 @@ export function AppShell({ active, children, mainClassName, hideSidebar }: AppSh
   const pathname = usePathname();
   const { ready, user } = useAuthSnapshot();
   const isPublicRoute = pathname === "/" || pathname === "/login";
+  const drawerWidth = 100;
+  const edgeSize = 24;
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+  const [mobileDrawerX, setMobileDrawerX] = useState(-drawerWidth);
+  const [mobileDragging, setMobileDragging] = useState(false);
+  const gestureRef = useRef<{
+    mode: "open" | "close" | null;
+    startX: number;
+    startY: number;
+    startTranslate: number;
+  }>({
+    mode: null,
+    startX: 0,
+    startY: 0,
+    startTranslate: -drawerWidth,
+  });
 
   useEffect(() => {
     if (!ready || user || isPublicRoute) return;
     router.replace("/");
   }, [ready, user, isPublicRoute, router]);
+
+  useEffect(() => {
+    setMobileDrawerOpen(false);
+    setMobileDrawerX(-drawerWidth);
+    setMobileDragging(false);
+    gestureRef.current.mode = null;
+  }, [pathname]);
+
+  useEffect(() => {
+    document.body.style.overflow = mobileDrawerOpen ? "hidden" : "";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [mobileDrawerOpen]);
+
+  const closeDrawer = () => {
+    setMobileDragging(false);
+    setMobileDrawerOpen(false);
+    setMobileDrawerX(-drawerWidth);
+    gestureRef.current.mode = null;
+  };
+
+  const onTouchStart = (event: React.TouchEvent<HTMLElement>) => {
+    if (hideSidebar) return;
+    if (window.matchMedia("(min-width: 768px)").matches) return;
+    const touch = event.touches[0];
+    if (!touch) return;
+    const canOpen = !mobileDrawerOpen && touch.clientX <= edgeSize;
+    const canClose = mobileDrawerOpen && touch.clientX <= drawerWidth + 24;
+    if (!canOpen && !canClose) return;
+    setMobileDragging(true);
+    setMobileDrawerOpen(true);
+    gestureRef.current = {
+      mode: canOpen ? "open" : "close",
+      startX: touch.clientX,
+      startY: touch.clientY,
+      startTranslate: canOpen ? -drawerWidth : 0,
+    };
+    setMobileDrawerX(canOpen ? -drawerWidth : 0);
+  };
+
+  const onTouchMove = (event: React.TouchEvent<HTMLElement>) => {
+    const touch = event.touches[0];
+    const g = gestureRef.current;
+    if (!touch || !g.mode) return;
+    const dx = touch.clientX - g.startX;
+    const dy = touch.clientY - g.startY;
+    if (Math.abs(dy) > Math.abs(dx) + 8) return;
+    const next = Math.max(-drawerWidth, Math.min(0, g.startTranslate + dx));
+    setMobileDrawerX(next);
+  };
+
+  const onTouchEnd = () => {
+    const g = gestureRef.current;
+    if (!g.mode) return;
+    const shouldOpen = mobileDrawerX > -drawerWidth * 0.45;
+    setMobileDragging(false);
+    setMobileDrawerOpen(shouldOpen);
+    setMobileDrawerX(shouldOpen ? 0 : -drawerWidth);
+    gestureRef.current.mode = null;
+  };
 
   if (!ready || (!user && !isPublicRoute)) {
     return (
@@ -48,10 +126,29 @@ export function AppShell({ active, children, mainClassName, hideSidebar }: AppSh
   }
 
   return (
-    <main className={mainClassName ?? defaultMainClass}>
+    <main
+      className={mainClassName ?? defaultMainClass}
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+      onTouchCancel={onTouchEnd}
+    >
       <AppBackground />
       {!hideSidebar && <AppSidebar active={active} />}
-      <div className={`${hideSidebar ? "" : "md:ml-[100px]"} flex min-w-0 flex-1`}>
+      {!hideSidebar && (
+        <AppMobileDrawer
+          active={active}
+          open={mobileDrawerOpen}
+          translateX={mobileDrawerX}
+          onClose={closeDrawer}
+        />
+      )}
+      <div
+        className={`${hideSidebar ? "" : "md:ml-[100px]"} flex min-w-0 flex-1 ${
+          mobileDrawerOpen ? "pointer-events-none select-none" : ""
+        }`}
+        aria-hidden={mobileDrawerOpen}
+      >
         {children}
       </div>
       <AppMobileNav active={active} />

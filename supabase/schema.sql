@@ -307,7 +307,7 @@ create policy "Feed post comments are readable by everyone"
   on public.feed_post_comments for select to public using (true);
 drop policy if exists "Authenticated users can insert feed post comments" on public.feed_post_comments;
 create policy "Authenticated users can insert feed post comments"
-  on public.feed_post_comments for insert to authenticated with check (true);
+  on public.feed_post_comments for insert to authenticated with check (auth.uid() = user_id);
 
 alter table public.feed_posts enable row level security;
 drop policy if exists "Feed posts are readable by everyone" on public.feed_posts;
@@ -605,7 +605,7 @@ create policy "Product comments are readable by everyone"
   on public.product_comment for select to public using (true);
 drop policy if exists "Authenticated users can insert product comments" on public.product_comment;
 create policy "Authenticated users can insert product comments"
-  on public.product_comment for insert to authenticated with check (true);
+  on public.product_comment for insert to authenticated with check (auth.uid() = user_id);
 
 -- Optional one-time: migrate Launch rows from feed_posts into product
 -- insert into public.product (user_id, author_name, author_tag, name, tagline, categories, logo_url, created_at)
