@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { getSupabaseBrowserClientOrNull } from "@/lib/supabase/client";
 import { safeAppPathRedirect } from "@/lib/auth/safeRedirect";
 
 const MONTHS = [
@@ -134,7 +134,8 @@ export default function Home() {
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
     const blob = new Blob([bytes], { type: "image/jpeg" });
-    const supabase = getSupabaseBrowserClient();
+    const supabase = getSupabaseBrowserClientOrNull();
+    if (!supabase) throw new Error("Supabase is not configured for this deployment yet.");
     const path = `${userId}/avatar.jpg`;
     const { error: uploadError } = await supabase.storage
       .from("avatars")
@@ -166,7 +167,12 @@ export default function Home() {
     setIsSendingVerification(true);
     setVerificationError(null);
     try {
-      const supabase = getSupabaseBrowserClient();
+      const supabase = getSupabaseBrowserClientOrNull();
+      if (!supabase) {
+        setVerificationError("Supabase is not configured for this deployment yet.");
+        setVerificationSent(false);
+        return;
+      }
       const { error } = await supabase.auth.signInWithOtp({
         email: email.trim(),
         options: {
@@ -559,7 +565,11 @@ export default function Home() {
                         return;
                       }
                       setVerificationError(null);
-                      const supabase = getSupabaseBrowserClient();
+                      const supabase = getSupabaseBrowserClientOrNull();
+                      if (!supabase) {
+                        setVerificationError("Supabase is not configured for this deployment yet.");
+                        return;
+                      }
                       const { error } = await supabase.auth.verifyOtp({
                         email: email.trim(),
                         token: code,
@@ -860,7 +870,11 @@ export default function Home() {
                       try {
                         setFormError(null);
                         setIsCompletingSignup(true);
-                        const supabase = getSupabaseBrowserClient();
+                        const supabase = getSupabaseBrowserClientOrNull();
+                        if (!supabase) {
+                          setFormError("Supabase is not configured for this deployment yet.");
+                          return;
+                        }
                         const {
                           data: { session },
                         } = await supabase.auth.getSession();
@@ -1054,7 +1068,11 @@ export default function Home() {
                   setSignInError(null);
                   setIsSigningIn(true);
                   try {
-                    const supabase = getSupabaseBrowserClient();
+                    const supabase = getSupabaseBrowserClientOrNull();
+                    if (!supabase) {
+                      setSignInError("Supabase is not configured for this deployment yet.");
+                      return;
+                    }
                     const { error } = await supabase.auth.signInWithPassword({
                       email: signInEmail.trim(),
                       password: signInPassword,

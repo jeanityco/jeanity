@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { getSupabaseBrowserClientOrNull } from "@/lib/supabase/client";
 
 type Space = { id: string; code: string; name: string; icon_url: string | null };
 
@@ -28,7 +28,12 @@ export function AppSidebarSpacesList() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const supabase = getSupabaseBrowserClient();
+    const supabase = getSupabaseBrowserClientOrNull();
+    if (!supabase) {
+      setSpaces([]);
+      setLoading(false);
+      return;
+    }
     const chRef: { current: ReturnType<typeof supabase.channel> | null } = { current: null };
     let cancelled = false;
 

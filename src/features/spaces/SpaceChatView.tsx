@@ -5,7 +5,7 @@ import Link from "next/link";
 import type { AppNavActive } from "@/components/shell/AppSidebar";
 import { AppShell } from "@/components/shell/AppShell";
 import { shellSpaceColumn } from "@/lib/ui/appShellClasses";
-import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { getSupabaseBrowserClientOrNull } from "@/lib/supabase/client";
 import { useAuthSnapshot } from "@/lib/auth/AuthProvider";
 type ChatRow = {
   id: string;
@@ -126,7 +126,8 @@ export function SpaceChatView({
     channels.find((c) => c.id === activeChannelId)?.description ?? "";
 
   useEffect(() => {
-    const supabase = getSupabaseBrowserClient();
+    const supabase = getSupabaseBrowserClientOrNull();
+    if (!supabase) return;
     supabase
       .from("channels")
       .select("id, slug, name, description, sort_order")
@@ -157,7 +158,12 @@ export function SpaceChatView({
     queueMicrotask(() => {
       if (!cancelled) setRosterLoading(true);
     });
-    const supabase = getSupabaseBrowserClient();
+    const supabase = getSupabaseBrowserClientOrNull();
+    if (!supabase) {
+      setSpaceRoster([]);
+      setRosterLoading(false);
+      return;
+    }
     void (async () => {
       const { data: memberRows, error } = await supabase
         .from("space_members")
@@ -224,7 +230,12 @@ export function SpaceChatView({
 
   const fetchMessages = useCallback(async (channelId: string) => {
     setLoading(true);
-    const supabase = getSupabaseBrowserClient();
+    const supabase = getSupabaseBrowserClientOrNull();
+    if (!supabase) {
+      setMessages([]);
+      setLoading(false);
+      return;
+    }
     let q = supabase
       .from("messages")
       .select("id, channel_id, user_id, author_name, body, edited_at, deleted_at, created_at")
@@ -262,7 +273,8 @@ export function SpaceChatView({
   }, [activeChannelId, ready, fetchMessages]);
 
   useEffect(() => {
-    const supabase = getSupabaseBrowserClient();
+    const supabase = getSupabaseBrowserClientOrNull();
+    if (!supabase) return;
     const ch = supabase.channel("messages:" + (space?.id ?? "global") + ":" + activeChannelId);
     ch.on(
       "postgres_changes",
@@ -345,7 +357,8 @@ export function SpaceChatView({
     e.preventDefault();
     const text = messageInput.trim();
     if (!text || !user) return;
-    const supabase = getSupabaseBrowserClient();
+    const supabase = getSupabaseBrowserClientOrNull();
+    if (!supabase) return;
     const authorName = userName || user.email?.split("@")[0] || "Anonymous";
     setMessageInput("");
     const { data: inserted, error } = await supabase
@@ -367,7 +380,8 @@ export function SpaceChatView({
 
   const updateMessage = async (messageId: string, newBody: string) => {
     if (!user) return;
-    const supabase = getSupabaseBrowserClient();
+    const supabase = getSupabaseBrowserClientOrNull();
+    if (!supabase) return;
     const editedAt = new Date().toISOString();
     setEditingId(null);
     setEditDraft("");
@@ -388,7 +402,8 @@ export function SpaceChatView({
     setMessages((prev) =>
       prev.map((m) => (m.id === messageId ? { ...m, text: undefined, isDeleted: true } : m))
     );
-    const supabase = getSupabaseBrowserClient();
+    const supabase = getSupabaseBrowserClientOrNull();
+    if (!supabase) return;
     await supabase
       .from("messages")
       .update({ deleted_at: new Date().toISOString(), body: null, updated_at: new Date().toISOString() })
@@ -419,7 +434,8 @@ export function SpaceChatView({
         return { ...msg, reactions: next };
       })
     );
-    const supabase = getSupabaseBrowserClient();
+    const supabase = getSupabaseBrowserClientOrNull();
+    if (!supabase) return;
     if (reacted) {
       await supabase
         .from("message_reactions")

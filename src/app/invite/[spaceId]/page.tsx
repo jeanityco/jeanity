@@ -6,7 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import type { PostgrestError } from "@supabase/supabase-js";
 import { AppShell } from "@/components/shell/AppShell";
 import { useAuthSnapshot } from "@/lib/auth/AuthProvider";
-import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { getSupabaseBrowserClientOrNull } from "@/lib/supabase/client";
 import { shellLaunchGradientClass } from "@/lib/ui/appShellClasses";
 import type { SpaceSummary } from "@/features/spaces/SpaceChatView";
 
@@ -36,7 +36,11 @@ export default function SpaceInvitePage() {
   const load = useCallback(async () => {
     if (!code || !user?.id) return;
     setState({ kind: "loading" });
-    const supabase = getSupabaseBrowserClient();
+    const supabase = getSupabaseBrowserClientOrNull();
+    if (!supabase) {
+      setState({ kind: "not_found" });
+      return;
+    }
     const { data: row, error }: { data: unknown; error: PostgrestError | null } = await supabase
       .from("spaces")
       .select("id, code, name, icon_url, created_by")
@@ -81,7 +85,11 @@ export default function SpaceInvitePage() {
     setJoinError(null);
     setJoinBusy(true);
     try {
-      const supabase = getSupabaseBrowserClient();
+      const supabase = getSupabaseBrowserClientOrNull();
+      if (!supabase) {
+        setJoinError("Supabase is not configured for this deployment yet.");
+        return;
+      }
       const { error } = await supabase.from("space_members").insert({
         space_id: state.space.id,
         user_id: user.id,

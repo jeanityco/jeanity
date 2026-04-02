@@ -6,7 +6,7 @@ import { useParams } from "next/navigation";
 import type { PostgrestError } from "@supabase/supabase-js";
 import { AppShell } from "@/components/shell/AppShell";
 import { SpaceChatView, type SpaceSummary } from "@/features/spaces/SpaceChatView";
-import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { getSupabaseBrowserClientOrNull } from "@/lib/supabase/client";
 
 export default function SpacePage() {
   const params = useParams();
@@ -16,7 +16,13 @@ export default function SpacePage() {
   useEffect(() => {
     if (!code) return;
     let cancelled = false;
-    const supabase = getSupabaseBrowserClient();
+    const supabase = getSupabaseBrowserClientOrNull();
+    if (!supabase) {
+      setSpace("not_found");
+      return () => {
+        cancelled = true;
+      };
+    }
     supabase
       .from("spaces")
       .select("id, code, name, icon_url, created_by")

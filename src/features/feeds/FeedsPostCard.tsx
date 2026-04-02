@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import type { FeedPost } from "@/features/feeds/feedPostTypes";
 import { useFeedsPosts } from "@/features/feeds/FeedsPostsContext";
 import { useAuthSnapshot } from "@/lib/auth/AuthProvider";
-import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { getSupabaseBrowserClientOrNull } from "@/lib/supabase/client";
 import { publicProfilePath } from "@/lib/profilePath";
 import { trackEngagementEvent } from "@/lib/analytics/engagementEvents";
 
@@ -76,7 +76,11 @@ function PostLikeControl({ postId, baseCount, variant }: PostLikeControlProps) {
       setMyVote(0);
       return;
     }
-    const supabase = getSupabaseBrowserClient();
+    const supabase = getSupabaseBrowserClientOrNull();
+    if (!supabase) {
+      setMyVote(0);
+      return;
+    }
     const { data } = await supabase
       .from("feed_post_votes")
       .select("vote")
@@ -96,7 +100,12 @@ function PostLikeControl({ postId, baseCount, variant }: PostLikeControlProps) {
         alive = false;
       };
     }
-    const supabase = getSupabaseBrowserClient();
+    const supabase = getSupabaseBrowserClientOrNull();
+    if (!supabase) {
+      return () => {
+        alive = false;
+      };
+    }
     void supabase
       .from("feed_post_votes")
       .select("vote")
@@ -119,7 +128,11 @@ function PostLikeControl({ postId, baseCount, variant }: PostLikeControlProps) {
   const setVote = async (nextVote: -1 | 0 | 1) => {
     if (!user?.id || likeBusy || myVote === nextVote) return;
     setLikeBusy(true);
-    const supabase = getSupabaseBrowserClient();
+    const supabase = getSupabaseBrowserClientOrNull();
+    if (!supabase) {
+      setLikeBusy(false);
+      return;
+    }
 
     const delta = nextVote - myVote;
     bumpPostLikeCount(postId, delta);
@@ -221,7 +234,8 @@ export function FeedsPostCard({ post, postIndex, mode = "feed" }: FeedsPostCardP
       });
       return;
     }
-    const supabase = getSupabaseBrowserClient();
+    const supabase = getSupabaseBrowserClientOrNull();
+    if (!supabase) return;
     void supabase
       .from("profiles")
       .select("id")
@@ -246,7 +260,8 @@ export function FeedsPostCard({ post, postIndex, mode = "feed" }: FeedsPostCardP
 
   const toggleFollow = async () => {
     if (!user?.id || followBusy || isMe) return;
-    const supabase = getSupabaseBrowserClient();
+    const supabase = getSupabaseBrowserClientOrNull();
+    if (!supabase) return;
     setFollowBusy(true);
     const { data: profile } = await supabase
       .from("profiles")

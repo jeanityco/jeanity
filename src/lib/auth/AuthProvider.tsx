@@ -11,7 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import type { User } from "@supabase/supabase-js";
-import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { getSupabaseBrowserClientOrNull } from "@/lib/supabase/client";
 
 export type AuthSnapshot = {
   user: User | null;
@@ -84,7 +84,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(() => {
     return runAuthExclusive(async () => {
       try {
-        const supabase = getSupabaseBrowserClient();
+        const supabase = getSupabaseBrowserClientOrNull();
+        if (!supabase) {
+          if (!mounted.current) return;
+          setSnap({ ...snapshotFromUser(null), ready: true });
+          return;
+        }
         const { data, error } = await supabase.auth.getUser();
         if (!mounted.current) return;
         if (error) {
@@ -103,7 +108,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     mounted.current = true;
     void refresh();
-    const supabase = getSupabaseBrowserClient();
+    const supabase = getSupabaseBrowserClientOrNull();
+    if (!supabase) {
+      // No Supabase configured → app can still render in guest mode.
+      return () => {
+        mounted.current = false;
+      };
+    }
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(() => {

@@ -1,5 +1,5 @@
 import { createBrowserClient } from "@supabase/ssr";
-import { getSupabasePublicEnv } from "@/lib/supabase/publicEnv";
+import { getSupabasePublicEnv, getSupabasePublicEnvOrNull } from "@/lib/supabase/publicEnv";
 
 /**
  * Single browser client for the whole app. Stored on globalThis so HMR does not
@@ -25,8 +25,21 @@ const browserClientOptions =
     : undefined;
 
 export function getSupabaseBrowserClient() {
+  const c = getSupabaseBrowserClientOrNull();
+  if (!c) {
+    // Keep the message consistent with the runtime error users already see.
+    throw new Error(
+      "Missing Supabase URL or public API key. Configure env in Vercel (see DEPLOY.md), then redeploy.",
+    );
+  }
+  return c;
+}
+
+export function getSupabaseBrowserClientOrNull() {
   if (!globalForSupabase.__jeanitySupabaseClient) {
-    const { url, anonKey } = getSupabasePublicEnv();
+    const env = getSupabasePublicEnvOrNull();
+    if (!env) return null;
+    const { url, anonKey } = env;
     globalForSupabase.__jeanitySupabaseClient = createBrowserClient(url, anonKey, browserClientOptions);
   }
   return globalForSupabase.__jeanitySupabaseClient;

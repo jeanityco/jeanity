@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { prepareSpaceIconForUpload } from "@/lib/prepareSpaceIconForUpload";
 import { prepareSpaceBackgroundForUpload } from "@/lib/prepareSpaceBackgroundForUpload";
 import { readFileAsDataUrl } from "@/lib/readFileAsDataUrl";
-import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { getSupabaseBrowserClientOrNull } from "@/lib/supabase/client";
 import { shellLaunchGradientClass } from "@/lib/ui/appShellClasses";
 
 export function generateSpaceCode(): string {
@@ -31,7 +31,8 @@ export async function createSpaceInDb(
   backgroundFile: File | null,
   isPublic: boolean
 ): Promise<CreateSpaceResult> {
-  const supabase = getSupabaseBrowserClient();
+  const supabase = getSupabaseBrowserClientOrNull();
+  if (!supabase) return { ok: false, error: "Supabase is not configured for this deployment yet." };
   const {
     data: { user },
   } = await supabase.auth.getUser();

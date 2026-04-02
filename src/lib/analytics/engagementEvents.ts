@@ -1,4 +1,4 @@
-import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { getSupabaseBrowserClientOrNull } from "@/lib/supabase/client";
 import type { CoreLoopStage } from "@/lib/coreLoop";
 
 type EngagementEventPayload = {
@@ -14,7 +14,8 @@ let analyticsTableUnavailable = false;
 export async function trackEngagementEvent(payload: EngagementEventPayload) {
   if (analyticsTableUnavailable) return;
 
-  const supabase = getSupabaseBrowserClient();
+  const supabase = getSupabaseBrowserClientOrNull();
+  if (!supabase) return;
   const {
     data: { user },
   } = await supabase.auth.getUser();

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { getSupabaseBrowserClientOrNull } from "@/lib/supabase/client";
 import { PREVIEW_TEXT } from "@/features/feeds/feedUi";
 
 type SpacePreview = {
@@ -32,7 +32,13 @@ export function FeedsSpacesPreview() {
 
   useEffect(() => {
     let cancelled = false;
-    const supabase = getSupabaseBrowserClient();
+    const supabase = getSupabaseBrowserClientOrNull();
+    if (!supabase) {
+      setSpaces([]);
+      return () => {
+        cancelled = true;
+      };
+    }
     void (async () => {
       const { data } = await supabase
         .from("spaces")

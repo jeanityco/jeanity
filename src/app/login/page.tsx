@@ -3,7 +3,7 @@
 import { Suspense, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { getSupabaseBrowserClientOrNull } from "@/lib/supabase/client";
 import { safeAppPathRedirect } from "@/lib/auth/safeRedirect";
 import { shellLaunchGradientClass } from "@/lib/ui/appShellClasses";
 
@@ -59,7 +59,11 @@ function LoginForm() {
               setError(null);
               setBusy(true);
               try {
-                const supabase = getSupabaseBrowserClient();
+                const supabase = getSupabaseBrowserClientOrNull();
+                if (!supabase) {
+                  setError("Supabase is not configured for this deployment yet.");
+                  return;
+                }
                 const { error: signErr } = await supabase.auth.signInWithPassword({
                   email: email.trim(),
                   password: password,

@@ -23,7 +23,7 @@ import { useAuthSnapshot } from "@/lib/auth/AuthProvider";
 import { normalizeUserTag } from "@/lib/profilePath";
 import type { FeedPost } from "@/features/feeds/feedPostTypes";
 import { shellLaunchGradientClass, shellMainColumn } from "@/lib/ui/appShellClasses";
-import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { getSupabaseBrowserClientOrNull } from "@/lib/supabase/client";
 
 type PublicSpace = {
   id: string;
@@ -132,7 +132,12 @@ export default function FeedsPage() {
 
   useEffect(() => {
     if (tab !== "Spaces") return;
-    const supabase = getSupabaseBrowserClient();
+    const supabase = getSupabaseBrowserClientOrNull();
+    if (!supabase) {
+      setPublicSpaces([]);
+      setPublicSpacesLoading(false);
+      return;
+    }
     let cancelled = false;
     queueMicrotask(() => {
       if (!cancelled) setPublicSpacesLoading(true);
@@ -174,7 +179,11 @@ export default function FeedsPage() {
 
   useEffect(() => {
     if (tab !== "Feeds") return;
-    const supabase = getSupabaseBrowserClient();
+    const supabase = getSupabaseBrowserClientOrNull();
+    if (!supabase) {
+      setRailSpaces([]);
+      return;
+    }
     let cancelled = false;
     void (async () => {
       const { data } = await supabase

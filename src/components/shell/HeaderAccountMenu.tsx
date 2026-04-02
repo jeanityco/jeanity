@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { getSupabaseBrowserClientOrNull } from "@/lib/supabase/client";
 import { useAuthSnapshot } from "@/lib/auth/AuthProvider";
 
 function MenuIconCircle({ children }: { children: React.ReactNode }) {
@@ -47,8 +47,10 @@ export function HeaderAccountMenu() {
   const onLogout = useCallback(async () => {
     setOpen(false);
     try {
-      const supabase = getSupabaseBrowserClient();
+      const supabase = getSupabaseBrowserClientOrNull();
+      if (supabase) {
       await supabase.auth.signOut();
+      }
     } catch {
       /* ignore */
     }

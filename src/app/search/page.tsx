@@ -8,7 +8,7 @@ import { AppShell } from "@/components/shell/AppShell";
 import { FeedsCurrentUserHeader } from "@/features/feeds/FeedsCurrentUser";
 import { HeaderAccountMenu } from "@/components/shell/HeaderAccountMenu";
 import { shellMainColumn } from "@/lib/ui/appShellClasses";
-import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { getSupabaseBrowserClientOrNull } from "@/lib/supabase/client";
 import { useFeedsPosts } from "@/features/feeds/FeedsPostsContext";
 import { useAuthSnapshot } from "@/lib/auth/AuthProvider";
 import { searchAll, type SearchPost, type SearchSpace, type SearchUser } from "@/lib/search/searchAll";
@@ -25,7 +25,7 @@ const DEBOUNCE_MS = 350;
 export default function SearchPage() {
   const router = useRouter();
   const { user } = useAuthSnapshot();
-  const [supabase, setSupabase] = useState<ReturnType<typeof getSupabaseBrowserClient> | null>(null);
+  const [supabase, setSupabase] = useState<ReturnType<typeof getSupabaseBrowserClientOrNull> | null>(null);
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [loading, setLoading] = useState(false);
@@ -40,7 +40,7 @@ export default function SearchPage() {
   // Avoid build-time prerender failures when Supabase env isn't configured yet.
   // (Client components are still rendered once on the server during `next build`.)
   useEffect(() => {
-    setSupabase(getSupabaseBrowserClient());
+    setSupabase(getSupabaseBrowserClientOrNull());
   }, []);
 
   const trendingTags = useMemo(

@@ -27,7 +27,7 @@ import type {
 import { PRODUCT_SELECT, productFromDbRow } from "@/features/feeds/productFromDb";
 import { fetchRankedFeedPage, type FeedRankCursor } from "@/lib/feed/rankedFeed";
 import { rankFallbackFeed } from "@/lib/feed/fallbackFeedRanking";
-import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { getSupabaseBrowserClientOrNull } from "@/lib/supabase/client";
 import { useAuthSnapshot } from "@/lib/auth/AuthProvider";
 
 type DbCommentRow = {
@@ -129,7 +129,18 @@ export function FeedsPostsProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    const supabase = getSupabaseBrowserClient();
+    const supabase = getSupabaseBrowserClientOrNull();
+    if (!supabase) {
+      setPosts([]);
+      setProducts([]);
+      setFeedRankingActive(false);
+      setFeedHasMore(false);
+      setRankCursor(null);
+      setLoaded(true);
+      return () => {
+        cancelled = true;
+      };
+    }
 
     void (async () => {
       const productsRes = await supabase
@@ -267,7 +278,8 @@ export function FeedsPostsProvider({ children }: { children: ReactNode }) {
       })
     );
 
-    const supabase = getSupabaseBrowserClient();
+    const supabase = getSupabaseBrowserClientOrNull();
+    if (!supabase) return;
     const {
       data: { user: authedUser },
     } = await supabase.auth.getUser();
@@ -305,7 +317,8 @@ export function FeedsPostsProvider({ children }: { children: ReactNode }) {
 
   const loadMorePosts = useCallback(async () => {
     if (!feedRankingActive || !feedHasMore || feedLoadingMore || !rankCursor) return;
-    const supabase = getSupabaseBrowserClient();
+    const supabase = getSupabaseBrowserClientOrNull();
+    if (!supabase) return;
     setFeedLoadingMore(true);
     try {
       const ranked = await fetchRankedFeedPage(supabase, {
@@ -363,7 +376,8 @@ export function FeedsPostsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const loadCommentsForPost = useCallback(async (postId: string) => {
-    const supabase = getSupabaseBrowserClient();
+    const supabase = getSupabaseBrowserClientOrNull();
+    if (!supabase) return;
     const { data, error } = await supabase
       .from("feed_post_comments")
       .select("id, author_name, author_tag, body, created_at, user_id")
@@ -407,7 +421,8 @@ export function FeedsPostsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const loadCommentsForProduct = useCallback(async (productId: string) => {
-    const supabase = getSupabaseBrowserClient();
+    const supabase = getSupabaseBrowserClientOrNull();
+    if (!supabase) return;
     const { data, error } = await supabase
       .from("product_comment")
       .select("id, author_name, author_tag, body, created_at, user_id")
@@ -479,7 +494,8 @@ export function FeedsPostsProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      const supabase = getSupabaseBrowserClient();
+      const supabase = getSupabaseBrowserClientOrNull();
+      if (!supabase) return;
       const { data, error } = await supabase
         .from("feed_post_comments")
         .insert({
@@ -533,7 +549,8 @@ export function FeedsPostsProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      const supabase = getSupabaseBrowserClient();
+      const supabase = getSupabaseBrowserClientOrNull();
+      if (!supabase) return;
       const { data, error } = await supabase
         .from("product_comment")
         .insert({
@@ -581,7 +598,8 @@ export function FeedsPostsProvider({ children }: { children: ReactNode }) {
       const caption = p.caption.trim() || " ";
 
       if (user?.id) {
-        const supabase = getSupabaseBrowserClient();
+        const supabase = getSupabaseBrowserClientOrNull();
+        if (!supabase) return;
         const { data: inserted, error } = await supabase
           .from("feed_posts")
           .insert({
@@ -642,7 +660,8 @@ export function FeedsPostsProvider({ children }: { children: ReactNode }) {
       const tagline = p.tagline.trim() || " ";
 
       if (user?.id) {
-        const supabase = getSupabaseBrowserClient();
+        const supabase = getSupabaseBrowserClientOrNull();
+        if (!supabase) return;
         const { data: inserted, error } = await supabase
           .from("product")
           .insert({

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import type { PostgrestError } from "@supabase/supabase-js";
 import { publicProfilePath } from "@/lib/profilePath";
-import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { getSupabaseBrowserClientOrNull } from "@/lib/supabase/client";
 import { shellProfileColumn } from "@/lib/ui/appShellClasses";
 import { AppShell } from "@/components/shell/AppShell";
 import { useAuthSnapshot } from "@/lib/auth/AuthProvider";
@@ -80,7 +80,8 @@ export default function UserProfileByHandlePage() {
 
   useEffect(() => {
     if (!usernameNorm) return;
-    const supabase = getSupabaseBrowserClient();
+    const supabase = getSupabaseBrowserClientOrNull();
+    if (!supabase) return;
     supabase
       .from("profiles")
       .select("id")
@@ -94,7 +95,8 @@ export default function UserProfileByHandlePage() {
 
   useEffect(() => {
     if (!user?.id || !profileUserId || isSelf) return;
-    const supabase = getSupabaseBrowserClient();
+    const supabase = getSupabaseBrowserClientOrNull();
+    if (!supabase) return;
     supabase
       .from("follows")
       .select("follower_id")
@@ -108,7 +110,8 @@ export default function UserProfileByHandlePage() {
 
   useEffect(() => {
     if (!viewedUserId) return;
-    const supabase = getSupabaseBrowserClient();
+    const supabase = getSupabaseBrowserClientOrNull();
+    if (!supabase) return;
     supabase
       .from("follows")
       .select("follower_id", { count: "exact", head: true })
@@ -127,7 +130,13 @@ export default function UserProfileByHandlePage() {
 
   useEffect(() => {
     if (!viewedUserId) return;
-    const supabase = getSupabaseBrowserClient();
+    const supabase = getSupabaseBrowserClientOrNull();
+    if (!supabase) {
+      setFollowers([]);
+      setFollowings([]);
+      setFollowsLoading(false);
+      return;
+    }
     setFollowsLoading(true);
     supabase
       .from("follows")
@@ -192,7 +201,12 @@ export default function UserProfileByHandlePage() {
     queueMicrotask(() => {
       setMyPostsLoading(true);
     });
-    const supabase = getSupabaseBrowserClient();
+    const supabase = getSupabaseBrowserClientOrNull();
+    if (!supabase) {
+      setMyPosts([]);
+      setMyPostsLoading(false);
+      return;
+    }
     supabase
       .from("feed_posts")
       .select(FEED_POST_SELECT)
@@ -220,7 +234,12 @@ export default function UserProfileByHandlePage() {
     queueMicrotask(() => {
       setLaunchedProductsLoading(true);
     });
-    const supabase = getSupabaseBrowserClient();
+    const supabase = getSupabaseBrowserClientOrNull();
+    if (!supabase) {
+      setLaunchedProducts([]);
+      setLaunchedProductsLoading(false);
+      return;
+    }
     supabase
       .from("product")
       .select("id, name, tagline, categories, logo_url, upvotes")
@@ -256,7 +275,12 @@ export default function UserProfileByHandlePage() {
     queueMicrotask(() => {
       setJoinedSpacesLoading(true);
     });
-    const supabase = getSupabaseBrowserClient();
+    const supabase = getSupabaseBrowserClientOrNull();
+    if (!supabase) {
+      setJoinedSpaces([]);
+      setJoinedSpacesLoading(false);
+      return;
+    }
     supabase
       .from("space_members")
       .select("space_id, joined_at")
@@ -313,7 +337,11 @@ export default function UserProfileByHandlePage() {
   const toggleFollow = async () => {
     if (!user?.id || !profileUserId || followLoading) return;
     setFollowLoading(true);
-    const supabase = getSupabaseBrowserClient();
+    const supabase = getSupabaseBrowserClientOrNull();
+    if (!supabase) {
+      setFollowLoading(false);
+      return;
+    }
     if (isFollowing) {
       await supabase.from("follows").delete().eq("follower_id", user.id).eq("following_id", profileUserId);
       setIsFollowing(false);

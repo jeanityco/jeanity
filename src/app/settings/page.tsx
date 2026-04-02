@@ -7,7 +7,7 @@ import { AppPageHeader } from "@/components/shell/AppPageHeader";
 import { AppShell } from "@/components/shell/AppShell";
 import { HeaderAccountMenu } from "@/components/shell/HeaderAccountMenu";
 import { useAuthSnapshot } from "@/lib/auth/AuthProvider";
-import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { getSupabaseBrowserClientOrNull } from "@/lib/supabase/client";
 import { shellSettingsColumn } from "@/lib/ui/appShellClasses";
 
 function Field({
@@ -153,7 +153,12 @@ export default function SettingsPage() {
     }
     setSaving(true);
     try {
-      const supabase = getSupabaseBrowserClient();
+      const supabase = getSupabaseBrowserClientOrNull();
+      if (!supabase) {
+        setErr("Supabase is not configured for this deployment yet.");
+        setSaving(false);
+        return;
+      }
       let avatarValue: string | null =
         avatar.trim() || (typeof m.avatar === "string" ? m.avatar : null) || null;
       if (avatarValue && avatarValue.startsWith("data:")) {
