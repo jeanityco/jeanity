@@ -32,7 +32,8 @@ export function AppShell({ active, children, mainClassName, hideSidebar }: AppSh
   const { ready, user } = useAuthSnapshot();
   const isPublicRoute = pathname === "/" || pathname === "/login";
   const drawerWidth = 100;
-  const edgeSize = 24;
+  const iosBackSwipeSafeZone = 28;
+  const drawerOpenStartMaxX = 96;
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [mobileDrawerX, setMobileDrawerX] = useState(-drawerWidth);
   const [mobileDragging, setMobileDragging] = useState(false);
@@ -79,7 +80,10 @@ export function AppShell({ active, children, mainClassName, hideSidebar }: AppSh
     if (window.matchMedia("(min-width: 768px)").matches) return;
     const touch = event.touches[0];
     if (!touch) return;
-    const canOpen = !mobileDrawerOpen && touch.clientX <= edgeSize;
+    const canOpen =
+      !mobileDrawerOpen &&
+      touch.clientX >= iosBackSwipeSafeZone &&
+      touch.clientX <= drawerOpenStartMaxX;
     const canClose = mobileDrawerOpen && touch.clientX <= drawerWidth + 24;
     if (!canOpen && !canClose) return;
     setMobileDragging(true);
