@@ -23,9 +23,9 @@ import { RankingProductRow } from "@/features/feeds/FeedsRankingList";
 const DEBOUNCE_MS = 350;
 
 export default function SearchPage() {
-  const supabase = getSupabaseBrowserClient();
   const router = useRouter();
   const { user } = useAuthSnapshot();
+  const [supabase, setSupabase] = useState<ReturnType<typeof getSupabaseBrowserClient> | null>(null);
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [loading, setLoading] = useState(false);
@@ -36,6 +36,12 @@ export default function SearchPage() {
   const [suggestedUsers, setSuggestedUsers] = useState<SearchUser[]>([]);
   const [suggestedSpaces, setSuggestedSpaces] = useState<SearchSpace[]>([]);
   const { products } = useFeedsPosts();
+
+  // Avoid build-time prerender failures when Supabase env isn't configured yet.
+  // (Client components are still rendered once on the server during `next build`.)
+  useEffect(() => {
+    setSupabase(getSupabaseBrowserClient());
+  }, []);
 
   const trendingTags = useMemo(
     () =>
@@ -78,6 +84,7 @@ export default function SearchPage() {
 
   useEffect(() => {
     let cancelled = false;
+    if (!supabase) return () => {};
     if (!debouncedQuery) {
       queueMicrotask(() => {
         if (cancelled) return;
@@ -105,6 +112,7 @@ export default function SearchPage() {
 
   useEffect(() => {
     let cancelled = false;
+    if (!supabase) return () => {};
     void (async () => {
       const [{ data: users }, { data: spaces }] = await Promise.all([
         supabase
@@ -158,6 +166,7 @@ export default function SearchPage() {
   );
 
   useEffect(() => {
+    if (!supabase) return;
     if (!user?.id || visibleUsers.length === 0) {
       queueMicrotask(() => setFollowingIds(new Set()));
       return;
@@ -179,7 +188,7 @@ export default function SearchPage() {
   }, [user?.id, visibleUsers, supabase]);
 
   const toggleFollow = async (targetUserId: string) => {
-    if (!user?.id) return;
+    if (!user?.id || !supabase) return;
     const isFollowing = followingIds.has(targetUserId);
     if (isFollowing) {
       await supabase
@@ -206,6 +215,7 @@ export default function SearchPage() {
       router.push(`/login?redirect=${encodeURIComponent(`/invite/${space.code}`)}`);
       return;
     }
+    if (!supabase) return;
     await supabase
       .from("space_members")
       .upsert({ space_id: space.id, user_id: user.id }, { onConflict: "space_id,user_id" });
